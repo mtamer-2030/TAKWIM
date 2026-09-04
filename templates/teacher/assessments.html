@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}التقاويم · مِحَكّ{% endblock %}
+{% block body %}
+{% include "teacher/_nav.html" %}
+<div class="wrap">
+  <h1>التقاويم</h1>
+  <p>
+    <a class="btn" href="/teacher/assessments/import">استيراد من JSON</a>
+  </p>
+
+  <div class="card">
+    <h2>تأليف تقويم جديد</h2>
+    <form method="post" action="/teacher/assessments/new">
+      <div class="field"><label>العنوان</label><input name="title" required></div>
+      <div class="rowflex">
+        <div style="flex:1"><label>النوع</label>
+          <select name="kind">
+            {% for k in KINDS %}<option value="{{ k }}">{{ KIND_LABELS[k] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div style="flex:1"><label>المستوى</label>
+          <select name="level"><option value=""></option>
+            {% for code, name in LEVELS.items() %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="rowflex">
+        <div style="flex:1"><label>المجزوءة</label><input name="unit"></div>
+        <div style="flex:1"><label>المفهوم</label><input name="concept"></div>
+      </div>
+      <p><button class="btn ok">إنشاء والانتقال إلى التأليف</button></p>
+    </form>
+  </div>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>العنوان</th><th>النوع</th><th>المستوى</th><th>الأسئلة</th><th></th></tr></thead>
+    <tbody>
+    {% for a in assessments %}
+      <tr>
+        <td><a href="/teacher/assessments/{{ a.id }}">{{ a.title }}</a></td>
+        <td>{{ KIND_LABELS.get(a.kind, a.kind) }}</td>
+        <td>{{ LEVELS.get(a.level, a.level or '—') }}</td>
+        <td>{{ qcounts[a.id] }}</td>
+        <td class="small">
+          <a href="/teacher/assessments/{{ a.id }}/export.json">تصدير JSON</a> ·
+          <form method="post" action="/teacher/assessments/{{ a.id }}/clone" style="display:inline">
+            <button class="btn ghost" style="min-height:34px;padding:.25rem .7rem">استنساخ</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">لا تقاويم بعد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

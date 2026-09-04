@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}بطاقات {{ cls.label }} · مِحَكّ{% endblock %}
+{% block body %}
+<div class="wrap no-print">
+  {% include "teacher/_nav.html" %}
+  <h1>بطاقات الرموز — {{ cls.label }}</h1>
+  <p class="muted">للطباعة ثمّ القصّ والتوزيع. كل بطاقة تحمل الاسم ورمز الدخول الكامل.</p>
+  <p><button class="btn" onclick="window.print()">🖨️ طباعة</button>
+     <a class="btn ghost" href="/teacher/rosters">رجوع</a></p>
+</div>
+
+<div class="wrap">
+  <div class="cards-grid">
+    {% for s in students %}
+    <div class="rc">
+      <div class="name">{{ s.full_name }}</div>
+      <div class="code">{{ s.login_code }}</div>
+      <div class="hint">{{ cls.label }} · على الهاتف أدخل: <b class="mono">{{ s.login_code.split('-')[1] }}-{{ s.login_code.split('-')[2] }}</b></div>
+    </div>
+    {% else %}
+    <p class="muted">لا تلاميذ نشطين في هذا القسم.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

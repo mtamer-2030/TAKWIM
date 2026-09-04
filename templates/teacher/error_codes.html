@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}رموز الأخطاء · مِحَكّ{% endblock %}
+{% block body %}
+{% include "teacher/_nav.html" %}
+<div class="wrap narrow">
+  <h1>رموز الأخطاء المشخِّصة</h1>
+  <p class="muted small">اللائحة مفتوحة وقابلة للتوسيع. البدائل الخاطئة هي المنهاج:
+    كل بديل يحمل رمزاً يمثّل خطأً حقيقياً يتكرّر في أوراق التلاميذ.</p>
+
+  <div class="card">
+    <form method="post" action="/teacher/error-codes" class="rowflex">
+      <div style="flex:1"><label>الرمز (لاتيني)</label>
+        <input name="code" class="mono" placeholder="missing_tension" required></div>
+      <div style="flex:2"><label>الوصف</label>
+        <input name="label" placeholder="غياب التوتّر بين موقفين" required></div>
+      <div style="align-self:end"><button class="btn ok">إضافة/تحديث</button></div>
+    </form>
+  </div>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>الرمز</th><th>الوصف</th></tr></thead>
+    <tbody>
+    {% for c in codes %}
+      <tr><td class="mono">{{ c.code }}</td><td>{{ c.label }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

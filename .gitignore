@@ -1,0 +1,20 @@
+# قاعدة البيانات وملفّاتها المؤقّتة
+data/*.db
+data/*.db-wal
+data/*.db-shm
+backups/
+
+# أسرار المساعدة المسائية
+config.ini
+
+# بايثون
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# نظام التشغيل
+Thumbs.db
+.DS_Store

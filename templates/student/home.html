@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}مِحَكّ{% endblock %}
+{% block body_class %}student-body{% endblock %}
+{% block body %}
+<div class="student">
+
+  <!-- اختيار القسم إن كانت أكثر من جلسة مفتوحة -->
+  <section id="screen-pick" class="screen">
+    <div class="big-title">مِحَكّ</div>
+    <p class="muted" style="text-align:center">اختر قسمك</p>
+    <div id="pick-list"></div>
+  </section>
+
+  <!-- إدخال الرمز -->
+  <section id="screen-code" class="screen">
+    <div class="big-title">مِحَكّ</div>
+    <p id="code-session-label" class="muted" style="text-align:center"></p>
+    <label for="code" style="text-align:center">أدخل رمزك</label>
+    <input id="code" class="code-input" type="text" inputmode="latin"
+           autocomplete="off" autocapitalize="characters" placeholder="07-K7">
+    <p class="muted small" style="text-align:center">مثال: 07-K7</p>
+    <div id="code-error" class="notice err" hidden></div>
+    <button id="btn-lookup" class="btn big">متابعة</button>
+  </section>
+
+  <!-- تأكيد الاسم -->
+  <section id="screen-confirm" class="screen">
+    <div class="big-title">هل هذا أنت؟</div>
+    <div class="card" style="text-align:center">
+      <div id="confirm-name" style="font-size:1.4rem;font-weight:700"></div>
+      <div id="confirm-rid" class="mono muted"></div>
+    </div>
+    <p class="muted small" style="text-align:center">
+      التأكيد لتفادي خطأ الإدخال فقط.</p>
+    <div class="navrow">
+      <button id="btn-back-code" class="btn ghost">رجوع</button>
+      <button id="btn-start" class="btn ok">نعم، ابدأ</button>
+    </div>
+  </section>
+
+  <!-- الأسئلة -->
+  <section id="screen-quiz" class="screen">
+    <div class="progress" id="progress"></div>
+    <div class="qcard" id="qcard"></div>
+    <div class="saveflag" id="saveflag"></div>
+    <div class="navrow">
+      <button id="btn-prev" class="btn ghost">السابق</button>
+      <button id="btn-next" class="btn">التالي</button>
+    </div>
+    <div class="navrow" id="submit-row" hidden>
+      <button id="btn-submit" class="btn ok big">تسليم</button>
+    </div>
+  </section>
+
+  <!-- الخاتمة -->
+  <section id="screen-done" class="screen">
+    <div class="big-title">تمّ التسليم</div>
+    <div id="feedback"></div>
+    <p class="muted small" style="text-align:center">يمكنك إغلاق الصفحة.</p>
+  </section>
+
+  <!-- لا جلسة -->
+  <section id="screen-none" class="screen">
+    <div class="big-title">مِحَكّ</div>
+    <div class="notice info" style="text-align:center">لا توجد جلسة مفتوحة الآن.</div>
+  </section>
+</div>
+
+<script id="sessions-data" type="application/json">{{ sessions|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/student.js"></script>{% endblock %}
