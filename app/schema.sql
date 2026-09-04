@@ -32,9 +32,8 @@ CREATE TABLE IF NOT EXISTS students (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ix_students_class ON students(class_id);
--- رقم مسار فريد حين يوجد (يسمح بغيابه للنمط القديم TC1-07).
-CREATE UNIQUE INDEX IF NOT EXISTS ux_students_massar
-    ON students(massar_id) WHERE massar_id IS NOT NULL;
+-- ملاحظة: الفهرس الفريد على massar_id يُنشأ في init_db بعد ضمان وجود العمود،
+-- تفادياً لفشل الإقلاع على قواعد قديمة أُنشئت قبل إضافة العمود.
 
 CREATE TABLE IF NOT EXISTS assessments (
     id                   INTEGER PRIMARY KEY,
