@@ -32,6 +32,8 @@ from ..assessments import (
 )
 from ..constants import COMPETENCIES, KINDS
 from ..db import get_conn
+from ..docx_import import parse_docx
+from ..docx_template import build_template_docx
 from ..evening import OfflineError, agreement_stats, run_evening
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
@@ -286,6 +288,33 @@ async def assessment_import(request: Request, file: UploadFile = File(...)):
             "teacher/assessment_import.html",
             _ctx(request, errors=[f"JSON غير صالح: {exc}"], result=None))
     r = validate_assessment(data)
+    if not r.ok:
+        return templates.TemplateResponse(
+            "teacher/assessment_import.html", _ctx(request, errors=r.errors, result=None))
+    with get_conn() as conn:
+        aid = insert_assessment(conn, r.normalized)
+    return RedirectResponse(url=f"/teacher/assessments/{aid}", status_code=303)
+
+
+@router.get("/assessments/template.docx")
+def assessment_template(request: Request):
+    guard = require_teacher(request)
+    if guard:
+        return guard
+    return Response(
+        content=build_template_docx(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'attachment; filename="mihakk-template.docx"'})
+
+
+@router.post("/assessments/import-docx", response_class=HTMLResponse)
+async def assessment_import_docx(request: Request, file: UploadFile = File(...)):
+    """استيراد تمرين من ملفّ Word — تحويل يقيني ثمّ تحقّق صارم، بلا أي ذكاء اصطناعي."""
+    guard = require_teacher(request)
+    if guard:
+        return guard
+    raw = await file.read()
+    r = parse_docx(raw)
     if not r.ok:
         return templates.TemplateResponse(
             "teacher/assessment_import.html", _ctx(request, errors=r.errors, result=None))
