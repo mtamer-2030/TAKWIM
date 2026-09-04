@@ -630,20 +630,26 @@ def live_data(request: Request, sid: int):
         students = students_of_class(conn, s["class_id"], active_only=True)
         present = {r["student_id"] for r in conn.execute(
             "SELECT student_id FROM attendance WHERE session_id=? AND present=1", (sid,))}
+        # استعلامان مجمّعان فقط (بدل استعلامين لكلّ تلميذ) — يخفّ الحمل مع ٤٥ هاتفاً.
+        latest_attempt = {}
+        for att in conn.execute(
+            "SELECT * FROM attempts WHERE session_id=? ORDER BY student_id, attempt_no",
+            (sid,)):
+            latest_attempt[att["student_id"]] = att  # الأحدث يبقى (ترتيب تصاعدي)
+        answered_by = {r["aid"]: r["n"] for r in conn.execute(
+            "SELECT an.attempt_id AS aid, COUNT(*) AS n FROM answers an "
+            "JOIN attempts at ON at.id = an.attempt_id WHERE at.session_id=? "
+            "GROUP BY an.attempt_id", (sid,))}
         grid = []
         submitted = 0
         for st in students:
-            att = conn.execute(
-                "SELECT * FROM attempts WHERE session_id=? AND student_id=? "
-                "ORDER BY attempt_no DESC LIMIT 1", (sid, st["id"])).fetchone()
+            att = latest_attempt.get(st["id"])
             if att is None:
                 status = "present" if st["id"] in present else "absent"
                 answered = 0
                 locked = False
             else:
-                answered = conn.execute(
-                    "SELECT COUNT(*) n FROM answers WHERE attempt_id=?",
-                    (att["id"],)).fetchone()["n"]
+                answered = answered_by.get(att["id"], 0)
                 status = att["status"]
                 locked = bool(att["device_token"])
                 if att["status"] == "submitted":

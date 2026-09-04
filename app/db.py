@@ -18,7 +18,9 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA journal_mode = WAL")   # قرّاء وكتّاب متوازون بلا تعارض
+    conn.execute("PRAGMA synchronous = NORMAL")  # آمن مع WAL وأسرع على أقراص ويندوز
+    conn.execute("PRAGMA busy_timeout = 15000")  # انتظر القفل بدل الفشل الفوري
     return conn
 
 

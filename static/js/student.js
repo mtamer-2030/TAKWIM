@@ -17,6 +17,8 @@
     questions: [], answers: {}, idx: 0,
     firstSeen: {}, msSpent: {}, revision: {}, startedAt: Date.now()
   };
+  // حفظ متين: dirty = أجوبة لم يُؤكَّد حفظها على الخادم بعد.
+  var dirty = {}, saving = false, flushTimer = null;
 
   function $(id) { return document.getElementById(id); }
   function show(name) {
@@ -89,8 +91,12 @@
     state.questions = res.questions;
     state.answers = res.answers || {};
     state.idx = 0;
+    dirty = {};
+    restoreLocal();       // استرجاع أي أجوبة محلّية لم تصل الخادم (بعد انقطاع)
     show("quiz");
     renderQuestion();
+    updateBadge();
+    if (Object.keys(dirty).length) { flush(); }
   };
 
   // ————— عرض الأسئلة —————
@@ -111,7 +117,7 @@
     var last = state.idx === state.questions.length - 1;
     $("btn-next").hidden = last;
     $("submit-row").hidden = !last;
-    $("saveflag").textContent = "";
+    updateBadge();
   }
 
   function renderAnswerArea(q) {
@@ -242,47 +248,127 @@
   }
   function swap(a, i, j) { var t = a[i]; a[i] = a[j]; a[j] = t; }
 
+  // ————— حفظ متين مقاوم لانقطاع الواي‑فاي (§4/6) —————
+
+  function lsKey() { return "mihakk_ans_" + state.attemptId; }
+  function persistLocal() {
+    try {
+      localStorage.setItem(lsKey(), JSON.stringify(
+        { answers: state.answers, revision: state.revision }));
+    } catch (e) { /* الوضع الخاص/الممتلئ: نتجاهل */ }
+  }
+  function restoreLocal() {
+    try {
+      var s = JSON.parse(localStorage.getItem(lsKey()) || "null");
+      if (!s || !s.answers) { return; }
+      Object.keys(s.answers).forEach(function (qid) {
+        var srv = state.answers[qid];
+        // إن كان الخادم لا يملك هذا الجواب لكنّ الجهاز يملكه ← أعِد إرساله.
+        if (srv === undefined || srv === null) {
+          state.answers[qid] = s.answers[qid];
+          dirty[qid] = true;
+        }
+      });
+      state.revision = Object.assign({}, s.revision || {}, state.revision);
+    } catch (e) { /* تجاهل */ }
+  }
+
+  function updateBadge() {
+    var n = Object.keys(dirty).length;
+    var el = $("saveflag");
+    if (n === 0) { el.textContent = "✓ كل الأجوبة محفوظة"; el.style.color = "var(--ok)"; }
+    else { el.textContent = "⏳ " + n + " بانتظار الحفظ…"; el.style.color = "var(--warn)"; }
+  }
+
   function setAnswer(qid, val, silent) {
     var prev = state.answers[qid];
     if (prev !== undefined && JSON.stringify(prev) !== JSON.stringify(val)) {
       state.revision[qid] = (state.revision[qid] || 0) + 1;
     }
     state.answers[qid] = val;
-    if (!silent) { $("saveflag").textContent = ""; }
+    dirty[qid] = true;
+    persistLocal();
+    if (!silent) { updateBadge(); scheduleFlush(250); }
   }
 
-  // ————— حفظ فوري عند كل انتقال (§4/6) —————
-  async function saveCurrent() {
-    var q = currentQ();
-    var raw = state.answers[q.id];
-    if (raw === undefined) { return; }
-    var since = state.firstSeen[q.id] || Date.now();
-    state.msSpent[q.id] = (state.msSpent[q.id] || 0) + (Date.now() - since);
-    state.firstSeen[q.id] = Date.now();
-    $("saveflag").textContent = "…جارٍ الحفظ";
-    var res = await postJSON("/api/student/answer", {
-      attempt_id: state.attemptId, device_token: deviceToken, question_id: q.id,
-      raw: raw, ms_spent: state.msSpent[q.id], revision_count: state.revision[q.id] || 0
-    });
-    $("saveflag").textContent = res.ok ? "✓ حُفِظ" : "تعذّر الحفظ — أعد المحاولة";
-    return res.ok;
+  function scheduleFlush(delay) {
+    if (flushTimer) { return; }
+    flushTimer = setTimeout(function () { flushTimer = null; flush(); }, delay || 600);
   }
 
-  $("btn-next").onclick = async function () {
-    await saveCurrent();
+  async function saveOne(qid) {
+    var raw = state.answers[qid];
+    if (raw === undefined) { delete dirty[qid]; return true; }
+    var since = state.firstSeen[qid] || Date.now();
+    var ms = (state.msSpent[qid] || 0) + (Date.now() - since);
+    try {
+      var res = await postJSON("/api/student/answer", {
+        attempt_id: state.attemptId, device_token: deviceToken, question_id: qid,
+        raw: raw, ms_spent: ms, revision_count: state.revision[qid] || 0
+      });
+      if (res && res.ok) {
+        state.msSpent[qid] = ms; state.firstSeen[qid] = Date.now();
+        delete dirty[qid]; return true;
+      }
+    } catch (e) { /* شبكة منقطعة ← يبقى dirty ويُعاد لاحقاً */ }
+    return false;
+  }
+
+  async function flush() {
+    if (saving) { return; }
+    saving = true;
+    try {
+      var qids = Object.keys(dirty);
+      for (var i = 0; i < qids.length; i++) { await saveOne(qids[i]); }
+    } finally { saving = false; updateBadge(); }
+  }
+
+  // خلفية: إعادة محاولة كل ٤ ثوانٍ لِما لم يُحفظ — يقاوم انقطاع الاتصال.
+  setInterval(function () { if (Object.keys(dirty).length) { flush(); } }, 4000);
+
+  async function flushAllBlocking(maxTries) {
+    for (var t = 0; t < (maxTries || 8); t++) {
+      await flush();
+      if (Object.keys(dirty).length === 0) { return true; }
+      await new Promise(function (r) { setTimeout(r, 700); });
+    }
+    return Object.keys(dirty).length === 0;
+  }
+
+  $("btn-next").onclick = function () {
+    flush();
     if (state.idx < state.questions.length - 1) { state.idx++; renderQuestion(); }
   };
-  $("btn-prev").onclick = async function () {
-    await saveCurrent();
+  $("btn-prev").onclick = function () {
+    flush();
     if (state.idx > 0) { state.idx--; renderQuestion(); }
   };
 
   $("btn-submit").onclick = async function () {
-    await saveCurrent();
-    var res = await postJSON("/api/student/submit", {
-      attempt_id: state.attemptId, device_token: deviceToken,
-      total_ms: Date.now() - state.startedAt
-    });
+    var btn = this;
+    btn.disabled = true; btn.textContent = "…جارٍ حفظ كل الأجوبة";
+    var ok = await flushAllBlocking(10);
+    if (!ok) {
+      btn.disabled = false; btn.textContent = "تسليم";
+      var el = $("saveflag");
+      el.textContent = "⚠️ " + Object.keys(dirty).length +
+        " جواب لم يُحفظ — تحقّق من الاتصال ثم أعد التسليم";
+      el.style.color = "var(--bad)";
+      return;
+    }
+    var res;
+    try {
+      res = await postJSON("/api/student/submit", {
+        attempt_id: state.attemptId, device_token: deviceToken,
+        total_ms: Date.now() - state.startedAt
+      });
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "تسليم";
+      $("saveflag").textContent = "تعذّر التسليم — تحقّق من الاتصال وأعد المحاولة";
+      $("saveflag").style.color = "var(--bad)";
+      return;
+    }
+    try { localStorage.removeItem(lsKey()); } catch (e) { /**/ }
     renderFeedback(res);
     show("done");
   };
