@@ -60,6 +60,14 @@ def init_db() -> None:
                 "INSERT OR IGNORE INTO error_codes (code, label) VALUES (?, ?)",
                 (code, label),
             )
+        # ترحيل خفيف: إضافة massar_id لقواعد أُنشئت قبل دعم أرقام مسار.
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(students)")]
+        if "massar_id" not in cols:
+            conn.execute("ALTER TABLE students ADD COLUMN massar_id TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_students_massar "
+                "ON students(massar_id) WHERE massar_id IS NOT NULL"
+            )
     finally:
         conn.close()
 

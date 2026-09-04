@@ -46,6 +46,7 @@ from ..queries import (
     questions_of,
     students_of_class,
 )
+from ..queries import existing_massar_ids as q_existing_massar_ids
 from ..queries import existing_roster_ids as q_existing_roster_ids
 from ..reports import (
     class_common_errors,
@@ -173,7 +174,8 @@ async def rosters_upload(request: Request, file: UploadFile = File(...)):
         return guard
     raw = (await file.read()).decode("utf-8-sig", errors="replace")
     with get_conn() as conn:
-        preview = analyze_csv(raw, q_existing_roster_ids(conn))
+        preview = analyze_csv(raw, q_existing_roster_ids(conn),
+                              q_existing_massar_ids(conn))
         classes = list_classes(conn, active_only=False)
         by_class = {c["id"]: students_of_class(conn, c["id"], active_only=False)
                     for c in classes}
@@ -189,7 +191,8 @@ def rosters_apply(request: Request, raw_text: str = Form(...)):
     if guard:
         return guard
     with get_conn() as conn:
-        preview = analyze_csv(raw_text, q_existing_roster_ids(conn))
+        preview = analyze_csv(raw_text, q_existing_roster_ids(conn),
+                              q_existing_massar_ids(conn))
         result = None
         if preview.ok:
             result = apply_import(conn, preview.rows)

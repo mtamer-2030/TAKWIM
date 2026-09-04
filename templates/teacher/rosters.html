@@ -51,11 +51,12 @@
     </div>
     <div class="table-wrap">
     <table>
-      <thead><tr><th>roster_id</th><th>الاسم</th><th>رمز الدخول</th><th>الحالة</th><th></th></tr></thead>
+      <thead><tr><th>رقم العرض</th><th>رقم مسار</th><th>الاسم</th><th>رمز الدخول</th><th>الحالة</th><th></th></tr></thead>
       <tbody>
       {% for s in by_class[c.id] %}
         <tr>
           <td class="mono">{{ s.roster_id }}</td>
+          <td class="mono small">{{ s.massar_id or '—' }}</td>
           <td>{{ s.full_name }}</td>
           <td class="mono">{{ s.login_code }}</td>
           <td>{% if s.active %}<span class="pill ok">نشط</span>{% else %}<span class="pill muted">مغادر</span>{% endif %}</td>

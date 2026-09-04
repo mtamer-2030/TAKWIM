@@ -40,6 +40,11 @@ def existing_roster_ids(conn: sqlite3.Connection) -> set[str]:
     return {r["roster_id"] for r in conn.execute("SELECT roster_id FROM students")}
 
 
+def existing_massar_ids(conn: sqlite3.Connection) -> set[str]:
+    return {r["massar_id"] for r in conn.execute(
+        "SELECT massar_id FROM students WHERE massar_id IS NOT NULL")}
+
+
 def student_by_login(conn: sqlite3.Connection, login_code: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM students WHERE login_code = ?", (login_code,)

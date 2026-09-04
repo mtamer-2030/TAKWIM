@@ -24,13 +24,17 @@ CREATE TABLE IF NOT EXISTS classes (
 CREATE TABLE IF NOT EXISTS students (
     id         INTEGER PRIMARY KEY,
     class_id   INTEGER NOT NULL REFERENCES classes(id),
-    roster_id  TEXT NOT NULL UNIQUE,           -- TC1-07 (للعرض)
+    roster_id  TEXT NOT NULL UNIQUE,           -- TC1-07 (للعرض، يُولَّد تلقائياً)
+    massar_id  TEXT,                            -- رقم مسار الرسمي (هوية ثابتة)
     login_code TEXT NOT NULL UNIQUE,           -- TC1-07-K7 (للدخول)
     full_name  TEXT NOT NULL,
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ix_students_class ON students(class_id);
+-- رقم مسار فريد حين يوجد (يسمح بغيابه للنمط القديم TC1-07).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_students_massar
+    ON students(massar_id) WHERE massar_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS assessments (
     id                   INTEGER PRIMARY KEY,
