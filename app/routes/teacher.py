@@ -33,6 +33,7 @@ from ..assessments import (
 from ..constants import COMPETENCIES, KINDS
 from ..db import get_conn
 from ..evening import OfflineError, agreement_stats, run_evening
+from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..queries import (
     error_code_labels,
@@ -139,7 +140,11 @@ def qr_page(request: Request):
     guard = require_teacher(request)
     if guard:
         return guard
-    return templates.TemplateResponse("teacher/qr.html", _ctx(request))
+    detected = lan_url(settings.port)
+    matches = (detected == settings.public_url)
+    return templates.TemplateResponse(
+        "teacher/qr.html",
+        _ctx(request, detected_url=detected, matches=matches))
 
 
 @router.get("/qr.png")
@@ -148,6 +153,17 @@ def qr_image(request: Request):
     if guard:
         return guard
     return Response(content=qr_png(settings.public_url), media_type="image/png")
+
+
+@router.get("/qr-detected.png")
+def qr_image_detected(request: Request):
+    guard = require_teacher(request)
+    if guard:
+        return guard
+    url = lan_url(settings.port)
+    if not url:
+        return Response(status_code=404)
+    return Response(content=qr_png(url), media_type="image/png")
 
 
 # ═══════════════════════════ اللوائح (م١) ═══════════════════════════
