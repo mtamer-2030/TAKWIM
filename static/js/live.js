@@ -13,6 +13,19 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
+  var lastOk = 0;
+  function markFresh() {
+    lastOk = Date.now();
+    var el = document.getElementById("live-status");
+    if (el) { el.textContent = "مباشر ✓ (تحديث كل ثانيتين)"; el.style.color = "var(--ok)"; }
+  }
+  function setStale() {
+    var el = document.getElementById("live-status");
+    if (!el) { return; }
+    var secs = lastOk ? Math.round((Date.now() - lastOk) / 1000) : 0;
+    el.textContent = lastOk ? ("انقطع التحديث منذ " + secs + " ث… يُعاد") : "تعذّر الاتصال… يُعاد";
+    el.style.color = "var(--warn)";
+  }
   async function unlock(studentId) {
     await fetch("/teacher/sessions/" + sid + "/unlock", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -22,11 +35,21 @@
   }
   window.__unlock = unlock;
 
+  async function fetchJSON(url, timeoutMs) {
+    var ctrl = new AbortController();
+    var to = setTimeout(function () { ctrl.abort(); }, timeoutMs || 4000);
+    try {
+      var r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+      return await r.json();
+    } finally { clearTimeout(to); }
+  }
+
   async function tick() {
     var res;
-    try { res = await (await fetch("/teacher/sessions/" + sid + "/live.json")).json(); }
-    catch (e) { return; }
-    if (!res.ok) { return; }
+    try { res = await fetchJSON("/teacher/sessions/" + sid + "/live.json", 4000); }
+    catch (e) { setStale(); return; }   // مهلة/انقطاع ← نُظهر أنّ التحديث تأخّر ونعيد بسرعة
+    if (!res || !res.ok) { return; }
+    markFresh();
     document.getElementById("stat-total-q").textContent = res.total_q;
     document.getElementById("stat-submitted").textContent = res.submitted;
     var present = 0, active = 0;

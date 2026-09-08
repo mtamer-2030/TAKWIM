@@ -1,4 +1,4 @@
-"""نقطة تجميع تطبيق FastAPI لنظام مِحَكّ."""
+"""نقطة تجميع تطبيق FastAPI لنظام PHILO-TECH."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # يُنشأ المخطّط عند تحميل الوحدة، فتوجد الجداول حتماً قبل أوّل طلب.
 init_db()
 
-app = FastAPI(title="مِحَكّ (mihakk)", version=APP_VERSION)
+app = FastAPI(title="PHILO-TECH (mihakk)", version=APP_VERSION)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

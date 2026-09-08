@@ -31,12 +31,18 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
-  async function postJSON(url, body) {
-    var r = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    return r.json();
+  async function postJSON(url, body, timeoutMs) {
+    // مهلة زمنية: إن تجمّد الاتصال (واي‑فاي ميّت) نُجهض الطلب ونعيد المحاولة،
+    // بدل أن يبقى «جارياً» بلا نهاية حتى إعادة تحميل الصفحة.
+    var ctrl = new AbortController();
+    var to = setTimeout(function () { ctrl.abort(); }, timeoutMs || 8000);
+    try {
+      var r = await fetch(url, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body), signal: ctrl.signal, cache: "no-store"
+      });
+      return await r.json();
+    } finally { clearTimeout(to); }
   }
 
   // ————— الدخول —————

@@ -601,6 +601,29 @@ def session_close(request: Request, sid: int):
     return RedirectResponse(url=f"/teacher/sessions/{sid}", status_code=303)
 
 
+@router.post("/sessions/{sid}/delete")
+def session_delete(request: Request, sid: int):
+    """يحذف جلسة وكلّ ما يتبعها (محاولات وأجوبة وحضور وأحداث هوية).
+
+    لا يمسّ التقويم ولا اللائحة — فقط هذه الجلسة. مفيد لإزالة جلسات التجربة.
+    """
+    guard = require_teacher(request)
+    if guard:
+        return guard
+    with get_conn() as conn:
+        conn.execute("BEGIN")
+        try:
+            conn.execute("DELETE FROM attempts WHERE session_id=?", (sid,))  # يجرّ الأجوبة
+            conn.execute("DELETE FROM identity_events WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM attendance WHERE session_id=?", (sid,))
+            conn.execute("DELETE FROM sessions WHERE id=?", (sid,))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return RedirectResponse(url="/teacher", status_code=303)
+
+
 # ═══════════════════════════ المتابعة المباشرة (م٤) ═══════════════════════════
 
 
