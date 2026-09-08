@@ -1,11 +1,12 @@
-"""PHILO-TECH v2 — نقطة تشغيل FastAPI (المرحلة 1).
+"""PHILO-TECH v2 — نقطة تشغيل FastAPI الأساسية والوحيدة.
+
+بعد توحيد النظامين وترحيل بيانات v1 (عبر ``scripts/migrate_v1_to_v2.py``)، صار
+هذا هو التطبيق الوحيد للتشغيل: لوحة الأستاذ على ``/admin`` وواجهة التلميذ على
+``/student``، مع قاعدة v2 (``data/philotech.db``) والذكاء الاصطناعي المحلّي (Ollama).
 
 الأداء: نستعمل حلقة الأحداث الأسرع المتاحة. uvloop لا يعمل على ويندوز، لذا
 نضبط uvicorn على loop="auto" (يختار الأفضل)؛ وعلى ويندوز يمكن تثبيت winloop
 للحصول على أداء مماثل. لا يُفرض uvloop حتى لا ينهار الخادم على ويندوز.
-
-ملاحظة: المسارات (/admin و/student) وقاعدة v2 تُبنى في المراحل 4–5. النظام
-الشغّال v1 يبقى كما هو (app.main:app عبر run.py) حتى نُكمل v2 ونهاجر البيانات.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ async def lifespan(_app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title="PHILO-TECH", version="2.0.0-dev", lifespan=lifespan)
+app = FastAPI(title="PHILO-TECH", version="2.0.0", lifespan=lifespan)
 
 # رفع/تخزين الوسائط والملفّات الثابتة
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,7 +61,7 @@ async def root():
 
 @app.get("/health")
 async def health() -> dict:
-    return {"app": "PHILO-TECH", "version": "2.0.0-dev", "db": str(DB_PATH), "ok": True}
+    return {"app": "PHILO-TECH", "version": "2.0.0", "db": str(DB_PATH), "ok": True}
 
 
 if __name__ == "__main__":
