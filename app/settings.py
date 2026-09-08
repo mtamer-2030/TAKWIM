@@ -32,11 +32,21 @@ class EveningAI:
 
 
 @dataclass
+class LocalAI:
+    """محرك ذكاء اصطناعي محلّي (Ollama/LM Studio) — للتقارير وخطط التدخّل فقط."""
+    enabled: bool = True
+    base_url: str = "http://localhost:11434"
+    model: str = "qwen2.5:7b-instruct"
+    timeout: int = 120
+
+
+@dataclass
 class Settings:
     teacher_password: str = "change-me-please"
     port: int = 8000
     public_url: str = "http://192.168.1.50:8000"
     evening: EveningAI = field(default_factory=EveningAI)
+    local_ai: LocalAI = field(default_factory=LocalAI)
 
 
 def _read_ini() -> configparser.ConfigParser:
@@ -57,6 +67,13 @@ def load_settings() -> Settings:
     if cp.has_section("server"):
         s.port = cp.getint("server", "port", fallback=s.port)
         s.public_url = cp.get("server", "public_url", fallback=s.public_url)
+    if cp.has_section("local_ai"):
+        s.local_ai = LocalAI(
+            enabled=cp.getboolean("local_ai", "enabled", fallback=True),
+            base_url=cp.get("local_ai", "base_url", fallback="http://localhost:11434"),
+            model=cp.get("local_ai", "model", fallback="qwen2.5:7b-instruct"),
+            timeout=cp.getint("local_ai", "timeout", fallback=120),
+        )
     if cp.has_section("evening_ai"):
         s.evening = EveningAI(
             enabled=cp.getboolean("evening_ai", "enabled", fallback=False),

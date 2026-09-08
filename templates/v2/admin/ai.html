@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% block title %}التدخّل العلاجي (AI) · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">توليد تقارير التدخّل العلاجي (AI)</h2>
+
+<div class="alert {{ 'alert-success' if online else 'alert-warning' }}">
+  المحرك المحلّي (Ollama):
+  {% if online %}<b>مشغّل ✓</b> — النموذج: <span class="text-secondary">{{ model }}</span>
+  {% else %}<b>غير مشغّل</b> — شغّل Ollama ثمّ حدّث الصفحة.
+    <div class="text-secondary" style="font-size:.9rem">
+      مثال: <code>ollama serve</code> ثمّ <code>ollama pull {{ model }}</code></div>
+  {% endif %}
+</div>
+
+{% if result %}
+  {% if result.offline %}
+    <div class="alert alert-danger">{{ result.message }}</div>
+  {% else %}
+    <div class="alert alert-success">{{ result.message }}</div>
+    {% if result.class_report %}
+    <div class="card mb-3"><div class="card-body">
+      <h3 class="card-title">تقرير القسم {{ result.group_name }} — القصور المهيمن: {{ result.class_report.dominant }}</h3>
+      <div style="white-space:pre-wrap;line-height:1.9">{{ result.class_report.plan }}</div>
+    </div></div>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <p class="text-secondary">تُعالَج التقارير <b>تسلسلياً</b> (تلميذاً تلو الآخر) لتفادي
+      اختناق المعالج وبطاقة الرسوم، ثمّ تُحفظ في قاعدة البيانات.</p>
+    <form method="post" action="/admin/ai/run">
+      <div class="row">
+        <div class="col-md-6 mb-2">
+          <label class="form-label">القسم/الفوج</label>
+          <select name="group_name" class="form-select" required>
+            {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% else %}
+            <option value="" disabled>لا أقسام — استورد لائحة أوّلاً</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" {% if not online or not groups %}disabled{% endif %}>
+        توليد تقارير التدخّل العلاجي</button>
+      {% if not online %}<span class="text-secondary">شغّل Ollama لتفعيل الزرّ.</span>{% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}

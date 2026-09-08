@@ -12,19 +12,29 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 
+from ..ai_feedback import (
+    AIUnavailable,
+    generate_class_plan,
+    generate_student_plan,
+    ollama_available,
+)
 from ..database import AsyncSessionLocal
 from ..importer import ImporterError, extract_text, parse_students_excel
 from ..models import (
     Axis,
+    ClassReport,
     Concept,
     EssayExercise,
     Level,
     Module,
     PhilosophicalText,
     Student,
+    StudentReport,
     Submission,
     TextType,
 )
+from ..services.analytics import generate_class_report, generate_student_skill_profile
+from ..settings import settings
 from .web import (
     ADMIN_COOKIE,
     check_admin_password,
@@ -243,6 +253,97 @@ async def rosters(request: Request):
         _ctx(request, students=students, levels=levels,
              added=request.query_params.get("added"),
              updated=request.query_params.get("updated")))
+
+
+# ═══════════════ التدخّل العلاجي (الذكاء الاصطناعي المحلّي) ═══════════════
+
+
+@router.get("/ai", response_class=HTMLResponse)
+async def ai_page(request: Request):
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+        report_count = await s.scalar(select(func.count()).select_from(StudentReport))
+    return templates.TemplateResponse(
+        "admin/ai.html",
+        _ctx(request, groups=groups, online=ollama_available(),
+             model=settings.local_ai.model, report_count=report_count, result=None))
+
+
+@router.post("/ai/run", response_class=HTMLResponse)
+async def ai_run(request: Request, group_name: str = Form(...)):
+    """معالجة تسلسلية (واحدة تلو الأخرى) لتفادي اختناق المعالج/بطاقة الرسوم.
+
+    تُحسب التحاليل ثمّ يُنادى Ollama لكلّ تلميذ على حدة، وتُحفظ في StudentReport،
+    ثمّ تقرير القسم في ClassReport. تدهور لطيف: إن كان المحرك مغلقاً لا 500.
+    """
+    if (g := require_admin(request)):
+        return g
+
+    async def render(**extra):
+        async with AsyncSessionLocal() as s:
+            groups = [r[0] for r in (await s.execute(
+                select(Student.group_name).where(Student.group_name.is_not(None))
+                .distinct().order_by(Student.group_name))).all()]
+        return templates.TemplateResponse(
+            "admin/ai.html",
+            _ctx(request, groups=groups, online=ollama_available(),
+                 model=settings.local_ai.model, report_count=None, **extra))
+
+    if not ollama_available():
+        return await render(result={"offline": True,
+                                    "message": "محرك الذكاء الاصطناعي غير مشغل. "
+                                               "يرجى تشغيل Ollama أولاً."})
+
+    processed = failed = 0
+    stopped_offline = False
+    async with AsyncSessionLocal() as s:
+        students = (await s.execute(
+            select(Student).where(Student.group_name == group_name,
+                                  Student.active.is_(True))
+            .order_by(Student.full_name))).scalars().all()
+
+        # (1) تقارير فردية — تسلسلياً
+        for st in students:
+            profile = await generate_student_skill_profile(s, st.id)
+            if not profile["has_data"]:
+                continue
+            try:
+                plan = generate_student_plan(profile)   # نداء Ollama (متزامن، واحد تلو الآخر)
+            except AIUnavailable:
+                stopped_offline = True
+                break
+            s.add(StudentReport(
+                student_id=st.id, skill_profile=profile["skills"],
+                ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+            processed += 1
+
+        # (2) تقرير القسم — بعد الأفراد
+        class_report = None
+        if not stopped_offline:
+            report = await generate_class_report(s, group_name)
+            if report["has_data"]:
+                try:
+                    plan = generate_class_plan(report)
+                    level_id = students[0].level_id if students else None
+                    s.add(ClassReport(
+                        level_id=level_id, group_name=group_name,
+                        skills_summary=report["skills"],
+                        weakest_skill=report["dominant_deficit"],
+                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                    class_report = {"dominant": report["dominant_deficit"], "plan": plan}
+                except AIUnavailable:
+                    stopped_offline = True
+        await s.commit()
+
+    return await render(result={
+        "offline": stopped_offline, "processed": processed, "failed": failed,
+        "group_name": group_name, "class_report": class_report,
+        "message": ("انقطع المحرك أثناء المعالجة؛ حُفظ ما تمّ." if stopped_offline
+                    else f"تمّ توليد {processed} تقرير تدخّل فردي وتقرير القسم.")})
 
 
 @router.get("/texts", response_class=HTMLResponse)
