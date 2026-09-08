@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import delete as sa_delete, func, select
 
 from ..ai_feedback import (
     AIUnavailable,
@@ -25,6 +25,7 @@ from ..models import (
     ClassReport,
     Concept,
     EssayExercise,
+    EvaluationEvent,
     Level,
     Module,
     PhilosophicalText,
@@ -33,6 +34,8 @@ from ..models import (
     Submission,
     TextType,
 )
+from ..netinfo import lan_url
+from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..settings import settings
 from .web import (
@@ -49,6 +52,11 @@ router = APIRouter(prefix="/admin")
 
 def _ctx(request: Request, **extra):
     return {"request": request, **extra}
+
+
+def _student_url() -> str:
+    """عنوان دخول التلميذ للـ QR: IP الشبكة المحلّية إن اكتُشف، وإلّا public_url."""
+    return lan_url(settings.port) or settings.public_url
 
 
 # ═══════════════ الاستيثاق ═══════════════
@@ -103,6 +111,25 @@ async def dashboard(request: Request):
         "admin/dashboard.html", _ctx(request, counts=counts, chart=json.dumps(chart)))
 
 
+# ═══════════════ رمز QR لربط هواتف التلاميذ ═══════════════
+
+
+@router.get("/qr", response_class=HTMLResponse)
+async def qr_page(request: Request):
+    """صفحة رمز QR ثابت: يعرضه الأستاذ على السبّورة أو يطبعه ليمسحه التلاميذ."""
+    if (g := require_admin(request)):
+        return g
+    return templates.TemplateResponse("admin/qr.html", _ctx(request, url=_student_url()))
+
+
+@router.get("/qr.png")
+async def qr_png_route(request: Request):
+    """صورة رمز QR (PNG) تُولَّد محلّياً — لا إنترنت ولا CDN."""
+    if (g := require_admin(request)):
+        return g
+    return Response(content=qr_png(_student_url()), media_type="image/png")
+
+
 # ═══════════════ المنهاج (إضافة سريعة ليكون للنصوص هدف) ═══════════════
 
 
@@ -148,6 +175,40 @@ async def add_axis(request: Request, module_id: int = Form(...), title: str = Fo
     cid = int(concept_id) if concept_id.strip().isdigit() else None
     async with AsyncSessionLocal() as s:
         s.add(Axis(module_id=module_id, concept_id=cid, title=title.strip()))
+        await s.commit()
+    return RedirectResponse("/admin/curriculum", status_code=303)
+
+
+# — حذف عناصر المنهاج (حذف على مستوى القاعدة مع تتالي المفاتيح الأجنبية) —
+# حذف المجزوءة يحذف محاورها ونصوصها وأسئلتها؛ إنجازات التلاميذ تبقى (question_id=NULL).
+
+
+@router.post("/curriculum/module/{module_id}/delete")
+async def delete_module(request: Request, module_id: int):
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(Module).where(Module.id == module_id))
+        await s.commit()
+    return RedirectResponse("/admin/curriculum", status_code=303)
+
+
+@router.post("/curriculum/concept/{concept_id}/delete")
+async def delete_concept(request: Request, concept_id: int):
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(Concept).where(Concept.id == concept_id))
+        await s.commit()
+    return RedirectResponse("/admin/curriculum", status_code=303)
+
+
+@router.post("/curriculum/axis/{axis_id}/delete")
+async def delete_axis(request: Request, axis_id: int):
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(Axis).where(Axis.id == axis_id))
         await s.commit()
     return RedirectResponse("/admin/curriculum", status_code=303)
 
@@ -356,3 +417,42 @@ async def texts(request: Request):
             .join(Axis, Axis.id == PhilosophicalText.axis_id, isouter=True)
             .order_by(PhilosophicalText.created_at.desc()))).all()
     return templates.TemplateResponse("admin/texts.html", _ctx(request, rows=rows))
+
+
+@router.post("/texts/{text_id}/delete")
+async def delete_text(request: Request, text_id: int):
+    """حذف نصّ فلسفي (وأسئلته بالتتالي)؛ إنجازات التلاميذ تبقى بلا سؤال."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(PhilosophicalText).where(PhilosophicalText.id == text_id))
+        await s.commit()
+    return RedirectResponse("/admin/texts", status_code=303)
+
+
+# ═══════════════ التقاويم (سياقات التقويم) ═══════════════
+
+
+@router.get("/events", response_class=HTMLResponse)
+async def events(request: Request):
+    """لائحة التقاويم مع عدد الإنجازات المرتبطة بكلّ تقويم، وإمكان الحذف."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        rows = (await s.execute(
+            select(EvaluationEvent, func.count(Submission.id))
+            .join(Submission, Submission.event_id == EvaluationEvent.id, isouter=True)
+            .group_by(EvaluationEvent.id)
+            .order_by(EvaluationEvent.created_at.desc()))).all()
+    return templates.TemplateResponse("admin/events.html", _ctx(request, rows=rows))
+
+
+@router.post("/events/{event_id}/delete")
+async def delete_event(request: Request, event_id: int):
+    """حذف تقويم وكلّ إنجازاته بالتتالي (ON DELETE CASCADE)."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(EvaluationEvent).where(EvaluationEvent.id == event_id))
+        await s.commit()
+    return RedirectResponse("/admin/events", status_code=303)

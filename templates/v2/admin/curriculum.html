@@ -47,10 +47,48 @@
   </div>
 </div>
 
-<div class="card mt-3"><div class="card-body">
-  <h3 class="card-title">المحاور الحالية</h3>
-  {% if axes %}
-  <ul>{% for ax in axes %}<li>{{ ax.title }}</li>{% endfor %}</ul>
-  {% else %}<p class="text-secondary">لا محاور بعد.</p>{% endif %}
-</div></div>
+<div class="row row-cards mt-1">
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h3 class="card-title">المجزوءات</h3>
+      {% if modules %}
+      <ul class="list-unstyled">{% for m in modules %}
+        <li class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span>{{ m.title }}</span>
+          <form method="post" action="/admin/curriculum/module/{{ m.id }}/delete"
+                onsubmit="return confirm('حذف المجزوءة «{{ m.title }}» وكلّ محاورها ونصوصها؟ لا رجعة.');">
+            <button class="btn btn-sm btn-ghost-danger">حذف</button></form>
+        </li>{% endfor %}</ul>
+      {% else %}<p class="text-secondary">لا مجزوءات بعد.</p>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h3 class="card-title">المفاهيم</h3>
+      {% if concepts %}
+      <ul class="list-unstyled">{% for c in concepts %}
+        <li class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span>{{ c.title }}</span>
+          <form method="post" action="/admin/curriculum/concept/{{ c.id }}/delete"
+                onsubmit="return confirm('حذف المفهوم «{{ c.title }}»؟');">
+            <button class="btn btn-sm btn-ghost-danger">حذف</button></form>
+        </li>{% endfor %}</ul>
+      {% else %}<p class="text-secondary">لا مفاهيم بعد.</p>{% endif %}
+    </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-body">
+      <h3 class="card-title">المحاور</h3>
+      {% if axes %}
+      <ul class="list-unstyled">{% for ax in axes %}
+        <li class="d-flex justify-content-between align-items-center py-1 border-bottom">
+          <span>{{ ax.title }}</span>
+          <form method="post" action="/admin/curriculum/axis/{{ ax.id }}/delete"
+                onsubmit="return confirm('حذف المحور «{{ ax.title }}» ونصوصه؟ لا رجعة.');">
+            <button class="btn btn-sm btn-ghost-danger">حذف</button></form>
+        </li>{% endfor %}</ul>
+      {% else %}<p class="text-secondary">لا محاور بعد.</p>{% endif %}
+    </div></div>
+  </div>
+</div>
 {% endblock %}

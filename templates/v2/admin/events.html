@@ -1,0 +1,29 @@
+{% extends "admin/base.html" %}
+{% block title %}التقاويم · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">التقاويم</h2>
+<p class="text-secondary">سياقات التقويم (تشخيصي/تمرين/فرض). حذف التقويم يحذف كلّ إنجازاته المرتبطة.</p>
+<div class="card"><div class="table-responsive">
+<table class="table">
+  <thead><tr><th>العنوان</th><th>النوع</th><th>الفوج</th><th>الإنجازات</th><th></th></tr></thead>
+  <tbody>
+  {% for ev, sub_count in rows %}
+    <tr>
+      <td>{{ ev.title }}</td>
+      <td>{{ ev.event_type.value }}</td>
+      <td class="text-secondary">{{ ev.group_name or '—' }}</td>
+      <td>{{ sub_count }}</td>
+      <td class="text-end">
+        <form method="post" action="/admin/events/{{ ev.id }}/delete"
+              onsubmit="return confirm('حذف «{{ ev.title }}» و{{ sub_count }} إنجازاً مرتبطاً؟ لا رجعة.');">
+          <button class="btn btn-sm btn-outline-danger">حذف</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary">لا تقاويم بعد.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

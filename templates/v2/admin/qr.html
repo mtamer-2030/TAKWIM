@@ -1,0 +1,32 @@
+{% extends "admin/base.html" %}
+{% block title %}رمز QR للدخول · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-print-none">
+  <h2 class="h2 mb-1">رمز QR لربط هواتف التلاميذ</h2>
+  <p class="text-secondary">
+    يمسح التلميذ هذا الرمز بكاميرا هاتفه فيُفتح النظام على صفحة الدخول مباشرةً.
+    اعرضه على السبّورة الرقمية، أو اطبعه وعلّقه في القسم.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-body text-center">
+    <img src="/admin/qr.png" alt="رمز QR" width="300" height="300"
+         style="max-width:300px;image-rendering:pixelated">
+    <div class="mt-3">
+      <div class="text-secondary">العنوان الذي يشير إليه الرمز:</div>
+      <div class="h3" dir="ltr"><a href="{{ url }}">{{ url }}</a></div>
+    </div>
+    <div class="mt-3 d-print-none">
+      <button class="btn btn-primary" onclick="window.print()">🖨️ طباعة الرمز</button>
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-info mt-3 d-print-none">
+  <b>ملاحظة:</b> يتغيّر العنوان تلقائياً حسب عنوان الحاسوب على الشبكة المحلّية.
+  إن كان ثابتاً على <code dir="ltr">192.168.1.50</code> فالرمز يبقى صالحاً كل السنة.
+  إن رأى التلاميذ «تعذّر الاتصال»، تأكّد من فتح المنفذ 8000 في جدار الحماية،
+  ومن أنّ الهواتف على واي‑فاي الراوتر نفسه.
+</div>
+{% endblock %}

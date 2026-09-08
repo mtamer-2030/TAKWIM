@@ -4,13 +4,19 @@
 <h2 class="h2 mb-3">النصوص الفلسفية</h2>
 <div class="card"><div class="table-responsive">
 <table class="table">
-  <thead><tr><th>العنوان</th><th>المؤلّف</th><th>المحور</th><th>النوع</th></tr></thead>
+  <thead><tr><th>العنوان</th><th>المؤلّف</th><th>المحور</th><th>النوع</th><th></th></tr></thead>
   <tbody>
   {% for t, axis_title in rows %}
     <tr><td>{{ t.title }}</td><td class="text-secondary">{{ t.author or '—' }}</td>
-        <td>{{ axis_title or '—' }}</td><td>{{ t.text_type.value }}</td></tr>
+        <td>{{ axis_title or '—' }}</td><td>{{ t.text_type.value }}</td>
+        <td class="text-end">
+          <form method="post" action="/admin/texts/{{ t.id }}/delete"
+                onsubmit="return confirm('حذف النصّ «{{ t.title }}» وأسئلته؟ لا رجعة.');">
+            <button class="btn btn-sm btn-outline-danger">حذف</button>
+          </form>
+        </td></tr>
   {% else %}
-    <tr><td colspan="4" class="text-secondary">لا نصوص بعد. استورد من Word/PDF/صورة.</td></tr>
+    <tr><td colspan="5" class="text-secondary">لا نصوص بعد. استورد من Word/PDF/صورة.</td></tr>
   {% endfor %}
   </tbody>
 </table>
