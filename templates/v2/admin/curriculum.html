@@ -1,0 +1,56 @@
+{% extends "admin/base.html" %}
+{% block title %}المنهاج · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">المنهاج</h2>
+<p class="text-secondary">مستوى ← مجزوءة ← (مفهوم اختياري) ← محور. المحاور هي أهداف حفظ النصوص.</p>
+
+<div class="row row-cards">
+  <div class="col-md-4">
+    <div class="card"><div class="card-header"><h3 class="card-title">إضافة مجزوءة</h3></div>
+      <div class="card-body">
+        <form method="post" action="/admin/curriculum/module">
+          <select name="level_id" class="form-select mb-2" required>
+            {% for lv in levels %}<option value="{{ lv.id }}">{{ lv.name }}</option>{% endfor %}
+          </select>
+          <input name="title" class="form-control mb-2" placeholder="عنوان المجزوءة" required>
+          <button class="btn btn-primary w-100">إضافة</button>
+        </form>
+      </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-header"><h3 class="card-title">إضافة مفهوم (اختياري)</h3></div>
+      <div class="card-body">
+        <form method="post" action="/admin/curriculum/concept">
+          <select name="module_id" class="form-select mb-2" required>
+            {% for m in modules %}<option value="{{ m.id }}">{{ m.title }}</option>{% endfor %}
+          </select>
+          <input name="title" class="form-control mb-2" placeholder="عنوان المفهوم" required>
+          <button class="btn btn-primary w-100">إضافة</button>
+        </form>
+      </div></div>
+  </div>
+  <div class="col-md-4">
+    <div class="card"><div class="card-header"><h3 class="card-title">إضافة محور</h3></div>
+      <div class="card-body">
+        <form method="post" action="/admin/curriculum/axis">
+          <select name="module_id" class="form-select mb-2" required>
+            {% for m in modules %}<option value="{{ m.id }}">{{ m.title }}</option>{% endfor %}
+          </select>
+          <select name="concept_id" class="form-select mb-2">
+            <option value="">— بلا مفهوم (جذع مشترك) —</option>
+            {% for c in concepts %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
+          </select>
+          <input name="title" class="form-control mb-2" placeholder="عنوان المحور" required>
+          <button class="btn btn-primary w-100">إضافة</button>
+        </form>
+      </div></div>
+  </div>
+</div>
+
+<div class="card mt-3"><div class="card-body">
+  <h3 class="card-title">المحاور الحالية</h3>
+  {% if axes %}
+  <ul>{% for ax in axes %}<li>{{ ax.title }}</li>{% endfor %}</ul>
+  {% else %}<p class="text-secondary">لا محاور بعد.</p>{% endif %}
+</div></div>
+{% endblock %}

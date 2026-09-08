@@ -1,0 +1,62 @@
+/* PHILO-TECH v2 — سمة محلّية بالكامل (خطّ عربي محلّي، بلا CDN). */
+
+/* الخطّ العربي محلّي عبر @font-face (لا Google Fonts). */
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/tajawal-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Tajawal";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/static/fonts/tajawal-700.woff2") format("woff2");
+}
+
+:root { --pt-font: "Tajawal", "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif; }
+
+body, .h1, .h2, .h3, .navbar, .btn, .form-control, .card-title {
+  font-family: var(--pt-font) !important;
+}
+
+/* ——— واجهة المتعلّم: هاتف أوّلاً ——— */
+.pt-student {
+  font-family: var(--pt-font);
+  background: #f4f6fb;
+  color: #16181d;
+  margin: 0;
+  -webkit-text-size-adjust: 100%;
+}
+.pt-shell { max-width: 640px; margin: 0 auto; min-height: 100vh;
+  display: flex; flex-direction: column; background: #fff; }
+.pt-header { background: #0d47a1; color: #fff; padding: .8rem 1rem;
+  display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+.pt-header .brand { font-weight: 700; font-size: 1.1rem; }
+.pt-main { flex: 1; padding: 1rem; }
+.pt-tabs { display: flex; background: #fff; border-top: 1px solid #e6e8ee;
+  position: sticky; bottom: 0; }
+.pt-tabs button { flex: 1; border: 0; background: none; padding: .8rem .3rem;
+  font: inherit; color: #5b6472; cursor: pointer; font-size: .9rem; }
+.pt-tabs button.active { color: #0d47a1; font-weight: 700;
+  box-shadow: inset 0 3px 0 #0d47a1; }
+.pt-card { background: #fff; border: 1px solid #e6e8ee; border-radius: 14px;
+  padding: 1rem; margin-bottom: .8rem; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.pt-input { width: 100%; font: inherit; font-size: 1.5rem; text-align: center;
+  letter-spacing: .1em; padding: 1rem; border: 2px solid #d4d9e2; border-radius: 12px;
+  direction: ltr; text-transform: uppercase; }
+.pt-btn { display: block; width: 100%; border: 0; background: #0d47a1; color: #fff;
+  font: inherit; font-weight: 700; padding: 1rem; border-radius: 12px; cursor: pointer;
+  min-height: 52px; font-size: 1.05rem; }
+.pt-btn.ghost { background: #eef2f9; color: #0d47a1; }
+.pt-reader { font-size: 1.15rem; line-height: 2; white-space: pre-wrap;
+  background: #fbfcfe; padding: 1rem; border-radius: 10px; }
+.htmx-indicator { opacity: 0; transition: opacity .2s; }
+.htmx-request .htmx-indicator { opacity: 1; }
+.muted { color: #6b7280; }
+
+/* ——— لوحة الأستاذ فوق Tabler ——— */
+.pt-admin .navbar-brand { font-weight: 700; }
+.pt-extract { min-height: 320px; font-family: var(--pt-font); line-height: 1.9; }

@@ -1,0 +1,17 @@
+<h3 style="margin:.2rem 0 1rem">نقطي</h3>
+{% for sub in subs %}
+  <div class="pt-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="muted" style="font-size:.85rem">{{ sub.submitted_at }}</span>
+      <b style="font-size:1.2rem">
+        {{ sub.score if sub.score is not none else '—' }}
+        {% if sub.max_score %}<span class="muted" style="font-size:.9rem">/ {{ sub.max_score }}</span>{% endif %}
+      </b>
+    </div>
+    {% if sub.skill_deficits %}
+      <div class="muted" style="font-size:.85rem;margin-top:.3rem">ملاحظات: {{ sub.skill_deficits }}</div>
+    {% endif %}
+  </div>
+{% else %}
+  <div class="pt-card muted">لا نقط مصادَق عليها بعد.</div>
+{% endfor %}

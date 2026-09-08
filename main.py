@@ -17,8 +17,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from fastapi.responses import RedirectResponse
+
 from app.database import DB_PATH, engine
 from app.models import Base
+from app.v2 import admin as v2_admin
+from app.v2 import student as v2_student
+from app.v2.web import seed_levels
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -32,6 +37,7 @@ async def lifespan(_app: FastAPI):
     if os.environ.get("PHILOTECH_AUTOCREATE") == "1":
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+    await seed_levels()          # يبذر المستويات الثلاثة إن غابت
     yield
     await engine.dispose()
 
@@ -42,6 +48,14 @@ app = FastAPI(title="PHILO-TECH", version="2.0.0-dev", lifespan=lifespan)
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+app.include_router(v2_admin.router)
+app.include_router(v2_student.router)
+
+
+@app.get("/")
+async def root():
+    return RedirectResponse("/student")
 
 
 @app.get("/health")

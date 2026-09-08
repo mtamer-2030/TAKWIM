@@ -1,0 +1,12 @@
+<h3 style="margin:.2rem 0 1rem">الدروس والنصوص</h3>
+{% for text, axis_title in rows %}
+  <a class="pt-card" style="display:block;color:inherit;text-decoration:none"
+     href="/student/text/{{ text.id }}">
+    <div style="font-weight:700">{{ text.title }}</div>
+    <div class="muted" style="font-size:.9rem">
+      {{ axis_title or '' }}{% if text.author %} · {{ text.author }}{% endif %}
+      · <span>{{ text.text_type.value }}</span></div>
+  </a>
+{% else %}
+  <div class="pt-card muted">لا نصوص متاحة لمستواك بعد.</div>
+{% endfor %}

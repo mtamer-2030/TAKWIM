@@ -1,0 +1,40 @@
+{% extends "admin/base.html" %}
+{% block title %}استيراد · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">استيراد</h2>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<div class="row row-cards">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">لائحة تلاميذ (Excel)</h3></div>
+      <div class="card-body">
+        <p class="text-secondary">ملفّ .xlsx فيه الاسم ورمز مسار والقسم.</p>
+        <form method="post" action="/admin/import/extract" enctype="multipart/form-data">
+          <input type="hidden" name="kind" value="roster">
+          <input type="file" name="file" class="form-control mb-2" accept=".xlsx,.xlsm" required>
+          <button class="btn btn-primary w-100">معاينة اللائحة</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">نصّ درس أو تقويم</h3></div>
+      <div class="card-body">
+        <p class="text-secondary">Word / PowerPoint / PDF / صورة صفحة كتاب (OCR).</p>
+        <form method="post" action="/admin/import/extract" enctype="multipart/form-data">
+          <input type="hidden" name="kind" value="text">
+          <input type="file" name="file" class="form-control mb-2"
+                 accept=".docx,.pptx,.pdf,.jpg,.jpeg,.png" required>
+          <button class="btn btn-primary w-100">استخراج النصّ للمراجعة</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="alert alert-info mt-3" style="font-size:.9rem">
+  المسار: <b>رفع الملفّ ← استخراج النصّ وعرضه في حقل قابل للتعديل ← مراجعتك وإصلاح
+  أخطاء OCR ← الحفظ النهائي في القاعدة</b>.
+</div>
+{% endblock %}

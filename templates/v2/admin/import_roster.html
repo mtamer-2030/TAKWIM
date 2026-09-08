@@ -1,0 +1,52 @@
+{% extends "admin/base.html" %}
+{% block title %}معاينة اللائحة · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">معاينة اللائحة</h2>
+<p class="text-secondary">المصدر: {{ filename }}</p>
+
+{% if not preview.ok %}
+<div class="card"><div class="card-body">
+  <h3 class="text-danger">لم تُقبل اللائحة</h3>
+  <ul class="text-danger">{% for e in preview.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  <a href="/admin/import" class="btn btn-link">رجوع</a>
+</div></div>
+{% else %}
+<form method="post" action="/admin/import/save/roster">
+  <input type="hidden" name="rows_json" value='{{ rows_json }}'>
+  <div class="card">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6 mb-2">
+          <label class="form-label">المستوى</label>
+          <select name="level_id" class="form-select" required>
+            {% for lv in levels %}<option value="{{ lv.id }}">{{ lv.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">القسم/الفوج (يطغى على عمود الملفّ إن مُلئ)</label>
+          <input name="group_override" class="form-control" placeholder="مثال: TC1">
+        </div>
+      </div>
+      <p class="text-secondary">سيُضاف/يُحدَّث <b>{{ preview.rows|length }}</b> تلميذاً
+        (تراكمي، المطابقة برمز مسار، بلا حذف).</p>
+      <div class="table-responsive" style="max-height:50vh;overflow:auto">
+        <table class="table table-sm">
+          <thead><tr><th>#</th><th>الاسم</th><th>رمز مسار</th><th>القسم</th></tr></thead>
+          <tbody>
+          {% for r in preview.rows %}
+            <tr><td>{{ loop.index }}</td><td>{{ r.full_name }}</td>
+                <td class="text-secondary">{{ r.massar_code or '—' }}</td>
+                <td>{{ r.group_name or '—' }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card-footer text-start">
+      <a href="/admin/import" class="btn btn-link">إلغاء</a>
+      <button class="btn btn-primary">الحفظ النهائي في القاعدة</button>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

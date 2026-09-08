@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+{% block title %}التلاميذ · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">التلاميذ</h2>
+{% if added is not none %}
+<div class="alert alert-success">تمّ الحفظ: أُضيف {{ added }}، حُدِّث {{ updated }}.</div>
+{% endif %}
+<div class="card"><div class="table-responsive">
+<table class="table">
+  <thead><tr><th>الاسم الكامل</th><th>رمز مسار</th><th>رمز الدخول</th><th>المستوى</th><th>القسم</th></tr></thead>
+  <tbody>
+  {% for st in students %}
+    <tr>
+      <td>{{ st.full_name }}</td>
+      <td class="text-secondary">{{ st.massar_code or '—' }}</td>
+      <td class="text-secondary">{{ st.login_code or '—' }}</td>
+      <td>{{ levels.get(st.level_id, '—') }}</td>
+      <td>{{ st.group_name or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary">لا تلاميذ بعد. استورد لائحة Excel.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

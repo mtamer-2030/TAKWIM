@@ -1,0 +1,47 @@
+{% extends "admin/base.html" %}
+{% block title %}مراجعة النصّ · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">مراجعة النصّ المستخرَج</h2>
+<p class="text-secondary">المصدر: {{ extracted.filename }} ({{ extracted.kind }}).
+  راجع النصّ وأصلح أي خطأ (خصوصاً نتائج OCR) قبل الحفظ.</p>
+
+{% if not axes %}
+<div class="alert alert-warning">لا محاور في المنهاج بعد.
+  أضِف مجزوءة ومحوراً أوّلاً من <a href="/admin/curriculum">المنهاج</a>، ثمّ أعِد الاستيراد.</div>
+{% endif %}
+
+<form method="post" action="/admin/import/save/text">
+  <div class="card">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6 mb-2">
+          <label class="form-label">العنوان</label>
+          <input name="title" class="form-control" value="{{ extracted.filename }}" required>
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">المؤلّف (اختياري)</label>
+          <input name="author" class="form-control">
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">المحور</label>
+          <select name="axis_id" class="form-select" required>
+            {% for ax in axes %}<option value="{{ ax.id }}">{{ ax.title }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 mb-2">
+          <label class="form-label">نوع النصّ</label>
+          <select name="text_type" class="form-select">
+            {% for t in text_types %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label class="form-label">النصّ (قابل للتعديل)</label>
+      <textarea name="content" class="form-control pt-extract" required>{{ extracted.text }}</textarea>
+    </div>
+    <div class="card-footer text-start">
+      <a href="/admin/import" class="btn btn-link">إلغاء</a>
+      <button class="btn btn-primary" {% if not axes %}disabled{% endif %}>الحفظ النهائي</button>
+    </div>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}PHILO-TECH{% endblock %}</title>
+  <link rel="stylesheet" href="/static/vendor/video-js.min.css">
+  <link rel="stylesheet" href="/static/v2/theme.css">
+</head>
+<body class="pt-student">
+  {% block body %}{% endblock %}
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/vendor/alpine.min.js" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

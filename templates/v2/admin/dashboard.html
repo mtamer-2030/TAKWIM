@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}اللوحة · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">اللوحة</h2>
+
+<div class="row row-cards mb-3">
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ counts.students }}</div><div class="text-secondary">تلميذ</div>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ counts.texts }}</div><div class="text-secondary">نصّ فلسفي</div>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ counts.essays }}</div><div class="text-secondary">تمرين إنشاء</div>
+  </div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ counts.submissions }}</div><div class="text-secondary">إنجاز</div>
+  </div></div></div>
+</div>
+
+<div class="row row-cards">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">توزيع التلاميذ حسب المستوى</h3></div>
+      <div class="card-body"><canvas id="chart-levels" height="220"></canvas></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">إجراءات سريعة</h3></div>
+      <div class="card-body">
+        <a class="btn btn-primary w-100 mb-2" href="/admin/import">استيراد لائحة أو نصّ درس</a>
+        <a class="btn btn-outline-primary w-100 mb-2" href="/admin/curriculum">إدارة المنهاج</a>
+        <a class="btn btn-outline-secondary w-100" href="/admin/rosters">قوائم التلاميذ</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var d = {{ chart|safe }};
+  new Chart(document.getElementById("chart-levels"), {
+    type: "bar",
+    data: { labels: d.labels, datasets: [{ label: "عدد التلاميذ", data: d.data,
+             backgroundColor: "#0d47a1" }] },
+    options: { responsive: true, plugins: { legend: { display: false } },
+               scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+});
+</script>
+{% endblock %}
