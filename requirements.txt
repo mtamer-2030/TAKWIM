@@ -13,4 +13,11 @@ sqlalchemy[asyncio]>=2.0   # ORM لامتزامن
 aiosqlite>=0.20            # سائق SQLite لامتزامن (WAL)
 alembic>=1.13              # هجرات القاعدة
 # winloop>=0.1             # (اختياري على ويندوز فقط لأداء أعلى؛ uvloop لا يعمل على ويندوز)
-# مكتبات الاستيراد (تُضاف في المرحلة 3): pandas openpyxl python-pptx pdfplumber pytesseract
+
+# ——— محرك الاستيراد متعدد الصيغ (المرحلة 3) ———
+pandas>=2.0             # قراءة لوائح Excel
+openpyxl>=3.1           # محرك .xlsx لـ pandas
+python-pptx>=0.6        # استخراج نصوص PowerPoint
+pdfplumber>=0.11        # استخراج نصوص PDF
+pytesseract>=0.3        # OCR لصور الكتب (يتطلّب ثنائي Tesseract + حزمة 'ara')
+# Pillow يأتي مع qrcode[pil] أعلاه
