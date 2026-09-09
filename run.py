@@ -14,6 +14,20 @@ import uvicorn
 
 from app.settings import settings
 
+
+def _enable_fast_loop() -> None:
+    """يُفعّل winloop تلقائياً إن كان مثبّتاً (ويندوز) لأداء أعلى — بلا إلزام.
+
+    غيابه ليس خطأ: يبقى asyncio الافتراضي. (uvloop يُستعمل تلقائياً على لينكس/ماك.)
+    """
+    try:
+        import winloop
+        winloop.install()
+    except Exception:  # noqa: BLE001 — غير مثبّت أو غير مدعوم: تجاهل بلا ضجّة
+        pass
+
+
 if __name__ == "__main__":
+    _enable_fast_loop()
     uvicorn.run("main:app", host="0.0.0.0", port=settings.port,
                 loop="auto", workers=1)

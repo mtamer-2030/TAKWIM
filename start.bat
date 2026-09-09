@@ -27,13 +27,32 @@ if not exist "config.ini" (
   copy config.ini.example config.ini >nul
 )
 
+REM تشغيل محرّك الذكاء الاصطناعي المحلّي (Ollama) تلقائياً إن كان مثبّتاً وغير مشغّل
+where ollama >nul 2>nul
+if %errorlevel%==0 (
+  tasklist /fi "imagename eq ollama.exe" 2>nul | find /i "ollama.exe" >nul
+  if errorlevel 1 (
+    echo تشغيل محرّك الذكاء الاصطناعي (Ollama) في الخلفية...
+    start "Ollama" /min ollama serve
+  )
+)
+
+REM محاولة فتح المنفذ 8000 في جدار الحماية (تنجح فقط إن شُغّل الملفّ كمسؤول)
+netsh advfirewall firewall show rule name="PHILO-TECH 8000" >nul 2>nul
+if errorlevel 1 (
+  netsh advfirewall firewall add rule name="PHILO-TECH 8000" dir=in action=allow protocol=TCP localport=8000 >nul 2>nul
+  if errorlevel 1 (
+    echo [تنبيه] لم أستطع فتح المنفذ 8000 في جدار الحماية ^(يلزم تشغيل كمسؤول^).
+    echo         إن لم تصل الهواتف، شغّل setup.ps1 مرّة واحدة كمسؤول.
+  )
+)
+
 echo [3/3] تشغيل الخادم...
 echo.
 echo   لوحة الأستاذ على هذا الحاسوب:  http://localhost:8000/admin
 echo   عنوان دخول التلاميذ على الهواتف يظهر تلقائياً أسفله عند الإقلاع.
 echo.
 echo   (اترك هذه النافذة مفتوحة طوال الحصّة. للايقاف: Ctrl+C)
-echo   (لتوليد تقارير الذكاء الاصطناعي: شغّل Ollama ثم افتح /admin/ai)
 echo.
 
 python run.py

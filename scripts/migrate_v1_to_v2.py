@@ -392,9 +392,30 @@ async def _amain() -> Report:
     return report
 
 
+def _archive_v1() -> str | None:
+    """ينقل قاعدة v1 القديمة إلى data/archive/ لتنظيف مساحة العمل (اختياري)."""
+    if not V1_DB_PATH.exists():
+        return None
+    archive_dir = V1_DB_PATH.parent / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest = archive_dir / f"mihakk_{stamp}.db"
+    shutil.move(str(V1_DB_PATH), str(dest))
+    for suffix in ("-wal", "-shm"):
+        side = Path(str(V1_DB_PATH) + suffix)
+        if side.exists():
+            shutil.move(str(side), str(dest) + suffix)
+    return str(dest)
+
+
 def main() -> None:
     report = asyncio.run(_amain())
     print_report(report)
+    # أرشفة قاعدة v1 بعد نجاح الترحيل — فقط عند تمرير --archive-v1 صراحةً.
+    if "--archive-v1" in sys.argv and report.students_migrated + report.students_skipped > 0:
+        dest = _archive_v1()
+        if dest:
+            print(f"  📦 نُقلت قاعدة v1 القديمة إلى: {dest}\n")
 
 
 if __name__ == "__main__":
