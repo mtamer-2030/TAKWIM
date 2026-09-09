@@ -51,19 +51,36 @@ def login_page(request: Request):
     return templates.TemplateResponse("student/login.html", _ctx(request))
 
 
-@router.post("/login")
-async def login(request: Request, code: str = Form(...)):
+async def _find_by_code(code: str) -> Student | None:
     code = code.strip().upper()
     async with AsyncSessionLocal() as s:
-        student = await s.scalar(
+        return await s.scalar(
             select(Student).where(
                 Student.active.is_(True),
                 or_(Student.massar_code == code, Student.login_code == code)))
+
+
+@router.post("/login", response_class=HTMLResponse)
+async def login(request: Request, code: str = Form(...)):
+    """الخطوة 1: التحقّق من الرمز وعرض اسم التلميذ للتأكيد (كما في v1)،
+    فلا يُثبَّت الدخول قبل أن يؤكّد التلميذ أنّ الاسم اسمه."""
+    student = await _find_by_code(code)
     if student is None:
         return templates.TemplateResponse(
             "student/login.html",
             _ctx(request, error="رمز غير معروف. تأكّد من رمز مسار أو رمز الدخول."),
             status_code=401)
+    return templates.TemplateResponse(
+        "student/confirm.html",
+        _ctx(request, student=student, code=code.strip().upper()))
+
+
+@router.post("/login/confirm")
+async def login_confirm(request: Request, code: str = Form(...)):
+    """الخطوة 2: بعد أن رأى التلميذ اسمه وأكّده، يُثبَّت الدخول (Cookie)."""
+    student = await _find_by_code(code)
+    if student is None:
+        return RedirectResponse("/student", status_code=303)
     resp = RedirectResponse("/student/home", status_code=303)
     resp.set_cookie(STUDENT_COOKIE, str(student.id), httponly=True, samesite="lax")
     return resp

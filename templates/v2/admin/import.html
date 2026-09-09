@@ -5,8 +5,8 @@
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
 <div class="row row-cards">
-  <div class="col-md-6">
-    <div class="card">
+  <div class="col-md-4">
+    <div class="card h-100">
       <div class="card-header"><h3 class="card-title">لائحة تلاميذ (Excel)</h3></div>
       <div class="card-body">
         <p class="text-secondary">ملفّ .xlsx فيه الاسم ورمز مسار والقسم.</p>
@@ -18,11 +18,12 @@
       </div>
     </div>
   </div>
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">نصّ درس أو تقويم</h3></div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header"><h3 class="card-title">نصّ درس فلسفي</h3></div>
       <div class="card-body">
-        <p class="text-secondary">Word / PowerPoint / PDF / صورة صفحة كتاب (OCR).</p>
+        <p class="text-secondary">Word / PowerPoint / PDF / صورة صفحة كتاب (OCR).
+          يُحفظ <b>نصّاً للقراءة</b> (أساسي/محاور/داعم) — ليس أسئلة.</p>
         <form method="post" action="/admin/import/extract" enctype="multipart/form-data">
           <input type="hidden" name="kind" value="text">
           <input type="file" name="file" class="form-control mb-2"
@@ -32,9 +33,26 @@
       </div>
     </div>
   </div>
+  <div class="col-md-4">
+    <div class="card h-100" style="border:2px solid #0d47a1">
+      <div class="card-header" style="background:#e8eefc">
+        <h3 class="card-title">تقويم بأسئلة (اختيار/تصنيف/مفتوح)</h3></div>
+      <div class="card-body">
+        <p class="text-secondary">JSON (صيغة v1) / Word / PDF بقالب مِحَكّ.
+          يتحوّل إلى <b>أسئلة تُعرض على المتعلّمين</b> مع تغذية راجعة — لا نصّاً.</p>
+        <form method="post" action="/admin/quizzes/import" enctype="multipart/form-data">
+          <input type="file" name="file" class="form-control mb-2"
+                 accept=".json,.docx,.pdf" required>
+          <button class="btn btn-primary w-100">استيراد التقويم</button>
+        </form>
+        <a href="/admin/quizzes" class="btn btn-link w-100 mt-1">إدارة التقاويم ←</a>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="alert alert-info mt-3" style="font-size:.9rem">
-  المسار: <b>رفع الملفّ ← استخراج النصّ وعرضه في حقل قابل للتعديل ← مراجعتك وإصلاح
-  أخطاء OCR ← الحفظ النهائي في القاعدة</b>.
+  <b>الفرق المهمّ:</b> «نصّ درس» يُحفظ للقراءة فقط؛ أمّا «تقويم بأسئلة» فيتحوّل إلى
+  أسئلة مغلقة/مفتوحة تُعرض على المتعلّمين وتُصحَّح. للقوالب الجاهزة: <code>samples/quiz_template.json</code>
+  و<code>samples/quiz_template.docx</code>.
 </div>
 {% endblock %}
