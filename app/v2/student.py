@@ -22,8 +22,8 @@ from ..models import (
     QuizAnswer,
     QuizQuestion,
     Student,
-    Submission,
 )
+from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
 from .web import STUDENT_COOKIE, current_student_id, templates
 
@@ -237,18 +237,46 @@ async def submit_quiz(request: Request, quiz_id: int):
         _ctx(request, quiz_title=quiz.title, feedback=feedback, reveal=reveal))
 
 
-@router.get("/tab/scores", response_class=HTMLResponse)
-async def tab_scores(request: Request):
+_SKILL_BANDS = [
+    (0.8, "متمكّن", "#2e7d32"),
+    (0.6, "جيّد", "#558b2f"),
+    (0.4, "في تطوّر", "#f9a825"),
+    (0.0, "يحتاج تدعيماً", "#c62828"),
+]
+
+
+def _band(avg: float | None) -> tuple[str, str]:
+    """يحوّل متوسّط المهارة (0..1) إلى وصف نوعيّ ولون — بلا رقم."""
+    if avg is None:
+        return ("لم يُقيَّم بعد", "#9e9e9e")
+    for threshold, label, color in _SKILL_BANDS:
+        if avg >= threshold:
+            return (label, color)
+    return ("يحتاج تدعيماً", "#c62828")
+
+
+@router.get("/tab/progress", response_class=HTMLResponse)
+async def tab_progress(request: Request):
+    """تقدّم التلميذ في المهارات الخمس: رادار بصريّ + وصف نوعيّ — بلا أي نقطة رقمية."""
     student = await _load_student(request)
     if student is None:
         return HTMLResponse("انتهت الجلسة", status_code=401)
     async with AsyncSessionLocal() as s:
-        subs = (await s.execute(
-            select(Submission).where(
-                Submission.student_id == student.id,
-                Submission.teacher_confirmed.is_(True))
-            .order_by(Submission.submitted_at.desc()))).scalars().all()
-    return templates.TemplateResponse("student/_scores.html", _ctx(request, subs=subs))
+        profile = await generate_student_skill_profile(s, student.id)
+    skills = profile.get("skills", {})
+    labels = list(skills.keys())
+    # القيم للرادار فقط (المحور مخفيّ الأرقام)؛ الغياب يُرسم صفراً بصريّاً.
+    values = [round((skills[k]["avg"] or 0.0), 4) for k in labels]
+    bands = []
+    for k in labels:
+        label, color = _band(skills[k]["avg"])
+        bands.append({"skill": k, "label": label, "color": color,
+                      "has_data": skills[k]["count"] > 0})
+    import json as _json
+    return templates.TemplateResponse(
+        "student/_progress.html",
+        _ctx(request, has_data=profile.get("has_data", False), bands=bands,
+             radar=_json.dumps({"labels": labels, "values": values})))
 
 
 @router.get("/text/{text_id}", response_class=HTMLResponse)

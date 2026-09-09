@@ -1,0 +1,52 @@
+<h3 style="margin:.2rem 0 1rem">تقدّمي في المهارات</h3>
+
+{% if has_data %}
+  <div class="pt-card" style="padding:.6rem">
+    <canvas id="skillRadar" height="240"></canvas>
+  </div>
+
+  <div style="margin-top:.8rem">
+    {% for b in bands %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:.45rem .2rem;border-bottom:1px solid #eee">
+        <span style="font-weight:600">{{ b.skill }}</span>
+        <span style="color:{{ b.color }};font-weight:700">{{ b.label }}</span>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="muted" style="text-align:center;margin-top:1rem;font-size:.85rem">
+    هذه صورة لتقدّمك في المهارات لتعرف أين تركّز جهدك — لا نقطة ولا ترتيب.</p>
+
+  <script>
+  (function () {
+    var data = {{ radar|safe }};
+    var el = document.getElementById("skillRadar");
+    if (!el || !window.Chart) return;
+    new Chart(el, {
+      type: "radar",
+      data: {
+        labels: data.labels,
+        datasets: [{
+          data: data.values,
+          fill: true,
+          backgroundColor: "rgba(13,71,161,.18)",
+          borderColor: "#0d47a1",
+          pointBackgroundColor: "#0d47a1"
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+          r: {
+            min: 0, max: 1,
+            ticks: { display: false, stepSize: 0.25 },   // إخفاء الأرقام
+            pointLabels: { font: { size: 13 } },
+            grid: { color: "#e0e0e0" }, angleLines: { color: "#e0e0e0" }
+          }
+        }
+      }
+    });
+  })();
+  </script>
+{% else %}
+  <div class="pt-card muted">لم تُصحَّح إنجازاتك بعد. ستظهر صورة تقدّمك هنا بعد تصحيح الأستاذ.</div>
+{% endif %}

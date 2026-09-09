@@ -22,8 +22,8 @@
             hx-get="/student/tab/lessons" hx-target="#tabview" hx-indicator=".htmx-indicator">الدروس</button>
     <button :class="{active: tab==='assessments'}" @click="tab='assessments'"
             hx-get="/student/tab/assessments" hx-target="#tabview" hx-indicator=".htmx-indicator">التقاويم</button>
-    <button :class="{active: tab==='scores'}" @click="tab='scores'"
-            hx-get="/student/tab/scores" hx-target="#tabview" hx-indicator=".htmx-indicator">النقط</button>
+    <button :class="{active: tab==='progress'}" @click="tab='progress'"
+            hx-get="/student/tab/progress" hx-target="#tabview" hx-indicator=".htmx-indicator">تقدّمي</button>
   </nav>
 </div>
 {% endblock %}
