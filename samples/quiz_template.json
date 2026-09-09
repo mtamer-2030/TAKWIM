@@ -1,0 +1,108 @@
+{
+  "title": "تقويم تشخيصي — الوعي واللاوعي (نموذج JSON)",
+  "kind": "diagnostic",
+  "level": "1BAC",
+  "unit": "الوضع البشري",
+  "concept": "الوعي واللاوعي",
+  "stimuli": [
+    {
+      "id": "s1",
+      "text": "الحياة النفسية واحدة، لكن جزءاً منها مضاء بنور الوعي وجزءاً يبقى في الظلّ؛ وليس اللاوعي عدماً بل قوّة فاعلة توجّه سلوكنا من حيث لا ندري."
+    }
+  ],
+  "questions": [
+    {
+      "type": "mcq_single",
+      "competency": "conceptualization",
+      "stimulus": "s1",
+      "prompt": "ما أطروحة صاحب النصّ؟",
+      "max_score": 2,
+      "payload": {
+        "options": [
+          "الحياة النفسية واحدة لكن جزءاً منها في الظلّ",
+          "الوعي مجرّد ضوء على جزء من الذهن",
+          "كلّ معرفة إنسانية ناقصة بطبعها"
+        ],
+        "correct": 0,
+        "diagnostics": {
+          "1": "اختزلتَ الأطروحة في عنصر جزئي منها",
+          "2": "أسقطتَ فكرة خارجية ليست في النصّ"
+        }
+      }
+    },
+    {
+      "type": "mcq_multi",
+      "competency": "argumentation",
+      "prompt": "أيّ العبارات تدعم أطروحة النصّ؟ (اختر ما يصحّ)",
+      "max_score": 2,
+      "payload": {
+        "options": [
+          "اللاوعي قوّة فاعلة",
+          "السلوك يوجَّه من حيث لا ندري",
+          "الوعي يحيط بكلّ الحياة النفسية",
+          "لا وجود لِما هو نفسيّ خارج الوعي"
+        ],
+        "correct": [0, 1]
+      }
+    },
+    {
+      "type": "classify",
+      "competency": "problematization",
+      "prompt": "صنّف كلّ عبارة: إشكال فلسفي أم سؤال معرفي؟",
+      "max_score": 2,
+      "payload": {
+        "categories": ["إشكال فلسفي", "سؤال معرفي"],
+        "items": [
+          {"text": "هل يملك الإنسان وعياً شفّافاً بذاته؟", "category": 0},
+          {"text": "متى ظهر مفهوم اللاوعي في علم النفس؟", "category": 1}
+        ]
+      }
+    },
+    {
+      "type": "order",
+      "competency": "argumentation",
+      "prompt": "رتّب خطوات بناء الحجاج ترتيباً سليماً.",
+      "max_score": 2,
+      "payload": {
+        "items": [
+          "طرح الإشكال في صيغة استفهامية",
+          "عرض الموقف الأوّل وحجّته",
+          "عرض الموقف المقابل وحجّته",
+          "تركيب يبرز التوتّر بين الموقفين"
+        ],
+        "correct_order": [0, 1, 2, 3],
+        "partial_credit": true
+      }
+    },
+    {
+      "type": "short_text",
+      "competency": "problematization",
+      "prompt": "صُغ إشكال النصّ في سؤال واحد.",
+      "max_score": 3,
+      "payload": {"max_chars": 200},
+      "indicators": [
+        {"id": "i1", "text": "صيغة استفهامية", "points": 1,
+         "check_rule": {"type": "regex", "pattern": "؟"}},
+        {"id": "i2", "text": "ذكر التوتّر (الوعي/اللاوعي)", "points": 2,
+         "check_rule": {"type": "any_of", "patterns": ["وعي", "لاوعي", "لاشعور"]}}
+      ]
+    },
+    {
+      "type": "long_text",
+      "competency": "synthesis",
+      "prompt": "اكتب فقرة تركيبية تبرز حدود أطروحة النصّ.",
+      "max_score": 4,
+      "payload": {
+        "max_chars": 900,
+        "scaffold": ["تذكير بالأطروحة", "حجّة داعمة", "حدّ أو اعتراض", "خلاصة"]
+      },
+      "indicators": [
+        {"id": "i1", "text": "ذكر الأطروحة", "points": 1,
+         "check_rule": {"type": "any_of", "patterns": ["أطروحة", "يرى", "يذهب"]}},
+        {"id": "i2", "text": "طول كافٍ", "points": 1,
+         "check_rule": {"type": "min_chars", "value": 200}},
+        {"id": "i3", "text": "ذكر حدّ أو اعتراض (يقدّره الأستاذ)", "points": 2}
+      ]
+    }
+  ]
+}

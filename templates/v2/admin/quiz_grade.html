@@ -1,0 +1,55 @@
+{% extends "admin/base.html" %}
+{% block title %}تصحيح · {{ quiz.title }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">تصحيح: {{ quiz.title }}</h2>
+  <a class="btn btn-outline-secondary" href="/admin/quizzes">→ التقاويم</a>
+</div>
+<p class="text-secondary">المغلقة مصحّحة آليّاً — راجعها وصادِق. المفتوحة: اكتب النقطة ثمّ صادِق.
+  لا يدخل الحساب والتقارير (والذكاء الاصطناعي) إلّا جوابٌ <b>مصادَق عليه</b>.</p>
+
+<form method="post" action="/admin/quizzes/{{ quiz.id }}/grade">
+{% for item in questions %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <h3 class="card-title">{{ loop.index }}. {{ item.q.prompt }}
+        <span class="text-secondary" style="font-weight:400;font-size:.85rem">
+          [{{ item.q.qtype }}] · {{ item.q.max_score }} ن · {{ 'مغلق (آلي)' if item.closed else 'مفتوح' }}</span>
+      </h3>
+    </div>
+    <div class="table-responsive"><table class="table table-vcenter">
+      <thead><tr><th>التلميذ</th><th>الجواب</th><th style="width:8rem">النقطة</th><th style="width:6rem">مصادَق</th></tr></thead>
+      <tbody>
+      {% for a in item.answers %}
+        <tr>
+          <td>{{ a.student.full_name }}</td>
+          <td style="white-space:pre-wrap;max-width:32rem">{{ a.readable }}</td>
+          <td>
+            {% if item.closed %}
+              <span class="badge {{ 'bg-green' if (a.effective is not none and a.effective >= item.q.max_score) else ('bg-yellow' if a.effective else 'bg-red') }}">
+                {{ a.effective if a.effective is not none else 0 }}/{{ item.q.max_score }}</span>
+            {% else %}
+              <input type="number" step="0.25" min="0" max="{{ item.q.max_score }}"
+                     name="score_{{ a.ans.id }}" class="form-control form-control-sm"
+                     value="{{ a.effective if a.effective is not none else '' }}">
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <input type="checkbox" name="confirm_{{ a.ans.id }}" {{ 'checked' if a.ans.teacher_confirmed }}>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-secondary">لا أجوبة بعد على هذا السؤال.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+{% endfor %}
+  <div class="d-flex gap-2 mb-4">
+    <button class="btn btn-primary">حفظ ومصادقة</button>
+    <button type="button" class="btn btn-outline-secondary"
+            onclick="document.querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">
+      تأشير الكلّ للمصادقة</button>
+  </div>
+</form>
+{% endblock %}

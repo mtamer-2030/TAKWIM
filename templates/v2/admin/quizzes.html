@@ -62,8 +62,9 @@
         </form>
       </td>
       <td>{{ '✓' if quiz.published else '—' }}</td>
-      <td class="text-end">
-        <form method="post" action="/admin/quizzes/{{ quiz.id }}/delete"
+      <td class="text-end" style="white-space:nowrap">
+        <a class="btn btn-sm btn-outline-primary" href="/admin/quizzes/{{ quiz.id }}/grade">تصحيح</a>
+        <form method="post" action="/admin/quizzes/{{ quiz.id }}/delete" style="display:inline"
               onsubmit="return confirm('حذف التقويم «{{ quiz.title }}» وكل أسئلته وأجوبته؟ لا رجعة.');">
           <button class="btn btn-sm btn-outline-danger">حذف</button>
         </form>

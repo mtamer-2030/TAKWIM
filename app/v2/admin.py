@@ -31,6 +31,7 @@ from ..models import (
     Module,
     PhilosophicalText,
     Quiz,
+    QuizAnswer,
     QuizQuestion,
     Student,
     StudentReport,
@@ -40,7 +41,13 @@ from ..models import (
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
-from ..services.quizzes import QuizImportError, build_quiz, normalize_quiz_json
+from ..constants import QUESTION_TYPES_CLOSED
+from ..services.quizzes import (
+    QuizImportError,
+    build_quiz,
+    normalize_quiz_json,
+    readable_answer,
+)
 from ..settings import settings
 from .web import (
     ADMIN_COOKIE,
@@ -563,3 +570,65 @@ async def quiz_delete(request: Request, quiz_id: int):
         await s.execute(sa_delete(Quiz).where(Quiz.id == quiz_id))
         await s.commit()
     return RedirectResponse("/admin/quizzes", status_code=303)
+
+
+# ═══════════════ تصحيح أجوبة التلاميذ (مصادقة + تنقيط المفتوحة) ═══════════════
+
+
+@router.get("/quizzes/{quiz_id}/grade", response_class=HTMLResponse)
+async def quiz_grade_page(request: Request, quiz_id: int):
+    """شاشة تصحيح: لكلّ سؤال أجوبة التلاميذ. المغلقة مصحّحة آليّاً (تُصادَق)،
+    والمفتوحة يُدخل الأستاذ نقطتها ويصادق. تغذّي التقارير والذكاء الاصطناعي."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id)
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("التقويم غير موجود", status_code=404)
+        rows = (await s.execute(
+            select(QuizAnswer, Student)
+            .join(Student, Student.id == QuizAnswer.student_id)
+            .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+            .where(QuizQuestion.quiz_id == quiz_id)
+            .order_by(QuizQuestion.position, Student.full_name))).all()
+    # تجميع الأجوبة حسب السؤال، مع نصّ مقروء وحالة الإغلاق.
+    by_q: dict[int, list] = {}
+    for ans, student in rows:
+        q = next((qq for qq in quiz.questions if qq.id == ans.question_id), None)
+        if q is None:
+            continue
+        by_q.setdefault(q.id, []).append({
+            "ans": ans, "student": student,
+            "readable": readable_answer(q, ans.raw),
+            "effective": ans.manual_score if ans.manual_score is not None else ans.auto_score,
+        })
+    questions = [{"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
+                  "answers": by_q.get(q.id, [])} for q in quiz.questions]
+    return templates.TemplateResponse(
+        "admin/quiz_grade.html", _ctx(request, quiz=quiz, questions=questions))
+
+
+@router.post("/quizzes/{quiz_id}/grade")
+async def quiz_grade_save(request: Request, quiz_id: int):
+    """يحفظ نقط الأستاذ للمفتوحة ويصادق على الأجوبة المؤشَّرة."""
+    if (g := require_admin(request)):
+        return g
+    form = await request.form()
+    async with AsyncSessionLocal() as s:
+        answers = (await s.execute(
+            select(QuizAnswer)
+            .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+            .where(QuizQuestion.quiz_id == quiz_id))).scalars().all()
+        for ans in answers:
+            raw_score = form.get(f"score_{ans.id}")
+            if raw_score not in (None, ""):
+                try:
+                    ans.manual_score = float(raw_score)
+                except ValueError:
+                    pass
+            ans.teacher_confirmed = form.get(f"confirm_{ans.id}") == "on"
+        await s.commit()
+    return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade", status_code=303)

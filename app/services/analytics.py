@@ -11,7 +11,25 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import AnalysisQuestion, Student, Submission, TargetSkill
+from sqlalchemy import func
+
+from ..models import (
+    AnalysisQuestion,
+    QuizAnswer,
+    QuizQuestion,
+    Student,
+    Submission,
+    TargetSkill,
+)
+
+# كفاية v1 (competency في التقاويم بالأسئلة) ← مهارة v2 (قيمة عربية).
+COMPETENCY_TO_SKILL: dict[str, str] = {
+    "problematization": TargetSkill.PROBLEM.value,          # إشكال
+    "conceptualization": TargetSkill.CONCEPTS.value,        # مفاهيم
+    "argumentation": TargetSkill.ARGUMENT_STRUCTURE.value,  # بنية حجاجية
+    "synthesis": TargetSkill.CONCLUSION.value,              # استنتاج
+    "knowledge": TargetSkill.THESIS.value,                  # أطروحة
+}
 
 # ترتيب المهارات الخمس الثابت.
 SKILLS: list[str] = [s.value for s in TargetSkill]
@@ -43,6 +61,24 @@ async def _confirmed_ratios_by_skill(
     for skill, score, max_score in (await session.execute(stmt)).all():
         key = skill.value if hasattr(skill, "value") else str(skill)
         buckets.setdefault(key, []).append(max(0.0, min(1.0, score / max_score)))
+
+    # + إنجازات التقاويم بالأسئلة المصادَق عليها (تُحوَّل كفايتها إلى مهارة v2).
+    eff_score = func.coalesce(QuizAnswer.manual_score, QuizAnswer.auto_score)
+    qstmt = (
+        select(QuizQuestion.competency, eff_score, QuizQuestion.max_score)
+        .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+        .where(
+            QuizAnswer.teacher_confirmed.is_(True),
+            eff_score.is_not(None),
+            QuizQuestion.max_score > 0,
+        )
+    )
+    if student_ids is not None:
+        qstmt = qstmt.where(QuizAnswer.student_id.in_(student_ids))
+    for competency, score, max_score in (await session.execute(qstmt)).all():
+        key = COMPETENCY_TO_SKILL.get(competency)
+        if key and score is not None:
+            buckets.setdefault(key, []).append(max(0.0, min(1.0, score / max_score)))
     return buckets
 
 

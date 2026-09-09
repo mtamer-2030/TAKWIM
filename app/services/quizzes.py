@@ -81,6 +81,40 @@ def grade_answer(question: QuizQuestion, raw: dict | None) -> dict:
     return out
 
 
+def readable_answer(question: QuizQuestion, raw: dict | None) -> str:
+    """يحوّل جواب التلميذ الخام إلى نصّ مقروء للأستاذ (لشاشة التصحيح)."""
+    raw = raw or {}
+    payload = question.payload or {}
+    opts = payload.get("options", [])
+    if question.qtype == "mcq_single":
+        c = raw.get("choice")
+        return opts[c] if isinstance(c, int) and 0 <= c < len(opts) else "— بلا جواب —"
+    if question.qtype == "mcq_multi":
+        chosen = [opts[i] for i in raw.get("choices", []) if isinstance(i, int) and 0 <= i < len(opts)]
+        return "، ".join(chosen) or "— بلا جواب —"
+    if question.qtype == "classify":
+        cats = payload.get("categories", [])
+        items = payload.get("items", [])
+        assigns = raw.get("assignments", [])
+        parts = []
+        for k, it in enumerate(items):
+            a = assigns[k] if k < len(assigns) else None
+            cat = cats[a] if isinstance(a, int) and 0 <= a < len(cats) else "—"
+            parts.append(f"{it.get('text', '')} → {cat}")
+        return " | ".join(parts) or "— بلا جواب —"
+    if question.qtype == "order":
+        items = payload.get("items", [])
+        order = raw.get("order", [])
+        seq = [items[i] for i in order if isinstance(i, int) and 0 <= i < len(items)]
+        return " ثمّ ".join(seq) or "— بلا جواب —"
+    if question.qtype in ("short_text", "long_text"):
+        return (raw.get("text") or "").strip() or "— بلا جواب —"
+    if question.qtype == "grid":
+        cells = raw.get("cells", [])
+        return " / ".join(" ، ".join(str(c) for c in row) for row in cells) or "— بلا جواب —"
+    return "—"
+
+
 def _feedback_for(question: QuizQuestion, raw: dict | None, res: dict) -> str | None:
     """تغذية راجعة نصّية للمتعلّم: صواب/خطأ للمغلقة + تشخيص البديل المختار إن وُجد."""
     if question.qtype not in QUESTION_TYPES_CLOSED:
