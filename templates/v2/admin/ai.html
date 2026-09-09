@@ -58,13 +58,19 @@
           </select>
         </div>
       </div>
-      <button class="btn btn-outline-primary" name="scope" value="class"
-              {% if not online or not groups %}disabled{% endif %}>
-        تقرير القسم فقط (سريع)</button>
-      <button class="btn btn-primary" name="scope" value="full"
-              {% if not online or not groups %}disabled{% endif %}>
-        تقرير القسم + كل الأفراد</button>
-      {% if not online %}<span class="text-secondary">شغّل Ollama لتفعيل الأزرار.</span>{% endif %}
+      <div class="mb-2">
+        <label class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_class" checked>
+          <span class="form-check-label"><b>تقرير جماعي للقسم</b> — القصور المهيمن وخطة الدعم (سريع)</span>
+        </label>
+        <label class="form-check">
+          <input class="form-check-input" type="checkbox" name="do_students">
+          <span class="form-check-label"><b>تقارير فردية</b> — خطة تدخّل لكل تلميذ (أبطأ: نداء لكل تلميذ)</span>
+        </label>
+      </div>
+      <button class="btn btn-primary" {% if not online or not groups %}disabled{% endif %}>
+        توليد التقارير المختارة</button>
+      {% if not online %}<span class="text-secondary">شغّل Ollama لتفعيل الزرّ.</span>{% endif %}
     </form>
   </div>
 </div>

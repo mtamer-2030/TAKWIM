@@ -377,6 +377,8 @@ async def _run_ai_job(group_name: str, scope: str = "full") -> None:
     scope="class" يكتفي بتقرير القسم (الأسرع).
     """
     import asyncio
+    do_class = scope in ("class", "full")
+    do_students = scope in ("students", "full")
     job = _AI_JOBS[group_name]
     try:
         async with AsyncSessionLocal() as s:
@@ -385,63 +387,72 @@ async def _run_ai_job(group_name: str, scope: str = "full") -> None:
                                       Student.active.is_(True))
                 .order_by(Student.full_name))).scalars().all()
 
-            # (1) تقرير القسم أوّلاً — يظهر بسرعة (نداء واحد)
-            report = await generate_class_report(s, group_name)
-            if report["has_data"]:
-                try:
-                    plan = await asyncio.to_thread(generate_class_plan, report)
-                    s.add(ClassReport(
-                        level_id=(students[0].level_id if students else None),
-                        group_name=group_name, skills_summary=report["skills"],
-                        weakest_skill=report["dominant_deficit"],
-                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
-                    job["class_report"] = {"dominant": report["dominant_deficit"], "plan": plan}
-                    await s.commit()
-                except AIUnavailable as exc:
-                    job.update(status="error", offline=True,
-                               message=f"توقّفت المعالجة: {exc}")
-                    return
-
-            if scope == "class":
-                await s.commit()
-                job.update(status="done",
-                           message="تمّ توليد تقرير القسم." if report["has_data"]
-                           else "لا بيانات مصادَقة لهذا الفوج بعد.")
-                return
+            # (1) التقرير الجماعي أوّلاً — يظهر بسرعة (نداء واحد)
+            if do_class:
+                report = await generate_class_report(s, group_name)
+                if report["has_data"]:
+                    try:
+                        plan = await asyncio.to_thread(generate_class_plan, report)
+                        s.add(ClassReport(
+                            level_id=(students[0].level_id if students else None),
+                            group_name=group_name, skills_summary=report["skills"],
+                            weakest_skill=report["dominant_deficit"],
+                            ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                        job["class_report"] = {"dominant": report["dominant_deficit"], "plan": plan}
+                        await s.commit()
+                    except AIUnavailable as exc:
+                        job.update(status="error", offline=True,
+                                   message=f"توقّفت المعالجة: {exc}")
+                        return
 
             # (2) التقارير الفردية — تسلسليّاً
-            job["total"] = len(students)
-            for st in students:
-                profile = await generate_student_skill_profile(s, st.id)
-                job["done"] += 1
-                if not profile["has_data"]:
-                    continue
-                try:
-                    plan = await asyncio.to_thread(generate_student_plan, profile)
-                except AIUnavailable as exc:
-                    job.update(status="error", offline=True,
-                               message=f"توقّفت المعالجة (حُفظ ما تمّ): {exc}")
-                    await s.commit()
-                    return
-                s.add(StudentReport(
-                    student_id=st.id, skill_profile=profile["skills"],
-                    ai_intervention_plan=plan, ai_model=settings.local_ai.model))
-                job["processed"] += 1
-            await s.commit()
-        job.update(status="done",
-                   message=f"تمّ توليد تقرير القسم و{job['processed']} تقرير تدخّل فردي.")
+            if do_students:
+                job["total"] = len(students)
+                for st in students:
+                    profile = await generate_student_skill_profile(s, st.id)
+                    job["done"] += 1
+                    if not profile["has_data"]:
+                        continue
+                    try:
+                        plan = await asyncio.to_thread(generate_student_plan, profile)
+                    except AIUnavailable as exc:
+                        job.update(status="error", offline=True,
+                                   message=f"توقّفت المعالجة (حُفظ ما تمّ): {exc}")
+                        await s.commit()
+                        return
+                    s.add(StudentReport(
+                        student_id=st.id, skill_profile=profile["skills"],
+                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                    job["processed"] += 1
+                await s.commit()
+
+        parts = []
+        if do_class:
+            parts.append("تقرير القسم" if job["class_report"] else "(لا بيانات للقسم)")
+        if do_students:
+            parts.append(f"{job['processed']} تقرير فردي")
+        job.update(status="done", message="تمّ توليد " + " و".join(parts) + ".")
     except Exception as exc:  # noqa: BLE001
         job.update(status="error", message=f"خطأ أثناء المعالجة: {exc}")
 
 
 @router.post("/ai/run", response_class=HTMLResponse)
-async def ai_run(request: Request, group_name: str = Form(...), scope: str = Form("full")):
+async def ai_run(request: Request, group_name: str = Form(...),
+                 do_class: str = Form(""), do_students: str = Form("")):
     """يطلق توليد التقارير كمهمّة خلفية ويعرض شريط تقدّم (لا تتجمّد الواجهة).
 
-    scope: «full» (القسم + كل الأفراد) أو «class» (القسم فقط — الأسرع)."""
+    يختار الأستاذ التقرير الجماعي و/أو الفردي بخانتَي اختيار مستقلّتين."""
     if (g := require_admin(request)):
         return g
     import asyncio
+    want_class = do_class == "on"
+    want_students = do_students == "on"
+    if want_class and want_students:
+        scope = "full"
+    elif want_students:
+        scope = "students"
+    else:
+        scope = "class"          # الافتراض عند عدم الاختيار: الجماعي (الأسرع)
 
     async def render(**extra):
         async with AsyncSessionLocal() as s:
