@@ -1,0 +1,23 @@
+{% if not job %}
+  <div class="text-secondary">لا مهمّة جارية.</div>
+{% elif job.status == 'running' %}
+  {% set pct = ((job.done / job.total * 100) | round) if job.total else 0 %}
+  <div class="progress mb-2" style="height:1.2rem">
+    <div class="progress-bar" style="width:{{ pct }}%">{{ pct }}٪</div>
+  </div>
+  <div class="text-secondary">
+    تُعالَج تسلسليّاً: {{ job.done }} / {{ job.total }} تلميذ · حُفظ {{ job.processed }} تقرير…
+  </div>
+  <div class="htmx-indicator text-secondary">…</div>
+{% else %}
+  {# انتهت المهمّة: أوقف الاستطلاع (لا hx-trigger) واعرض النتيجة #}
+  <div class="alert {{ 'alert-danger' if job.status == 'error' else 'alert-success' }} mb-2">
+    {{ job.message }}</div>
+  {% if job.class_report %}
+    <div class="card"><div class="card-body">
+      <h4 class="card-title">تقرير القسم — القصور المهيمن: {{ job.class_report.dominant }}</h4>
+      <div style="white-space:pre-wrap;line-height:1.9">{{ job.class_report.plan }}</div>
+    </div></div>
+  {% endif %}
+  <a class="btn btn-outline-primary mt-2" href="/admin/ai">تحديث الصفحة</a>
+{% endif %}

@@ -12,6 +12,16 @@
   {% endif %}
 </div>
 
+{% if job_group %}
+  <div class="card mb-3"><div class="card-body">
+    <h3 class="card-title">جارٍ توليد التقارير — الفوج {{ job_group }}</h3>
+    <div hx-get="/admin/ai/status?group={{ job_group }}"
+         hx-trigger="load, every 2s" hx-swap="innerHTML">
+      <div class="text-secondary">…بدء المعالجة</div>
+    </div>
+  </div></div>
+{% endif %}
+
 {% if result %}
   {% if result.offline %}
     <div class="alert alert-danger">{{ result.message }}</div>

@@ -349,15 +349,68 @@ async def ai_page(request: Request):
              model=settings.local_ai.model, report_count=report_count, result=None))
 
 
+# حالة مهامّ الذكاء الاصطناعي الجارية (في الذاكرة) — مفتاحها اسم الفوج.
+_AI_JOBS: dict[str, dict] = {}
+
+
+async def _run_ai_job(group_name: str) -> None:
+    """مهمّة خلفية: تولّد تقارير التدخّل تسلسليّاً دون تجميد واجهة الأستاذ.
+
+    نداءات Ollama متزامنة (حاجبة)، فتُنفَّذ في خيط منفصل عبر to_thread حتى لا
+    تحجب حلقة الأحداث. يُحدَّث تقدّم المهمّة ليعرضه شريط التقدّم (HTMX polling).
+    """
+    import asyncio
+    job = _AI_JOBS[group_name]
+    try:
+        async with AsyncSessionLocal() as s:
+            students = (await s.execute(
+                select(Student).where(Student.group_name == group_name,
+                                      Student.active.is_(True))
+                .order_by(Student.full_name))).scalars().all()
+            job["total"] = len(students)
+            for st in students:
+                profile = await generate_student_skill_profile(s, st.id)
+                job["done"] += 1
+                if not profile["has_data"]:
+                    continue
+                try:
+                    plan = await asyncio.to_thread(generate_student_plan, profile)
+                except AIUnavailable:
+                    job.update(status="error", offline=True,
+                               message="انقطع المحرّك أثناء المعالجة؛ حُفظ ما تمّ.")
+                    await s.commit()
+                    return
+                s.add(StudentReport(
+                    student_id=st.id, skill_profile=profile["skills"],
+                    ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                job["processed"] += 1
+
+            # تقرير القسم بعد الأفراد
+            report = await generate_class_report(s, group_name)
+            if report["has_data"]:
+                try:
+                    plan = await asyncio.to_thread(generate_class_plan, report)
+                    s.add(ClassReport(
+                        level_id=(students[0].level_id if students else None),
+                        group_name=group_name, skills_summary=report["skills"],
+                        weakest_skill=report["dominant_deficit"],
+                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                    job["class_report"] = {"dominant": report["dominant_deficit"], "plan": plan}
+                except AIUnavailable:
+                    job.update(offline=True)
+            await s.commit()
+        job.update(status="done",
+                   message=f"تمّ توليد {job['processed']} تقرير تدخّل فردي وتقرير القسم.")
+    except Exception as exc:  # noqa: BLE001
+        job.update(status="error", message=f"خطأ أثناء المعالجة: {exc}")
+
+
 @router.post("/ai/run", response_class=HTMLResponse)
 async def ai_run(request: Request, group_name: str = Form(...)):
-    """معالجة تسلسلية (واحدة تلو الأخرى) لتفادي اختناق المعالج/بطاقة الرسوم.
-
-    تُحسب التحاليل ثمّ يُنادى Ollama لكلّ تلميذ على حدة، وتُحفظ في StudentReport،
-    ثمّ تقرير القسم في ClassReport. تدهور لطيف: إن كان المحرك مغلقاً لا 500.
-    """
+    """يطلق توليد التقارير كمهمّة خلفية ويعرض شريط تقدّم (لا تتجمّد الواجهة)."""
     if (g := require_admin(request)):
         return g
+    import asyncio
 
     async def render(**extra):
         async with AsyncSessionLocal() as s:
@@ -374,52 +427,22 @@ async def ai_run(request: Request, group_name: str = Form(...)):
                                     "message": "محرك الذكاء الاصطناعي غير مشغل. "
                                                "يرجى تشغيل Ollama أولاً."})
 
-    processed = failed = 0
-    stopped_offline = False
-    async with AsyncSessionLocal() as s:
-        students = (await s.execute(
-            select(Student).where(Student.group_name == group_name,
-                                  Student.active.is_(True))
-            .order_by(Student.full_name))).scalars().all()
+    _AI_JOBS[group_name] = {"status": "running", "total": 0, "done": 0,
+                            "processed": 0, "offline": False, "message": "",
+                            "class_report": None}
+    asyncio.create_task(_run_ai_job(group_name))
+    return await render(job_group=group_name)
 
-        # (1) تقارير فردية — تسلسلياً
-        for st in students:
-            profile = await generate_student_skill_profile(s, st.id)
-            if not profile["has_data"]:
-                continue
-            try:
-                plan = generate_student_plan(profile)   # نداء Ollama (متزامن، واحد تلو الآخر)
-            except AIUnavailable:
-                stopped_offline = True
-                break
-            s.add(StudentReport(
-                student_id=st.id, skill_profile=profile["skills"],
-                ai_intervention_plan=plan, ai_model=settings.local_ai.model))
-            processed += 1
 
-        # (2) تقرير القسم — بعد الأفراد
-        class_report = None
-        if not stopped_offline:
-            report = await generate_class_report(s, group_name)
-            if report["has_data"]:
-                try:
-                    plan = generate_class_plan(report)
-                    level_id = students[0].level_id if students else None
-                    s.add(ClassReport(
-                        level_id=level_id, group_name=group_name,
-                        skills_summary=report["skills"],
-                        weakest_skill=report["dominant_deficit"],
-                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
-                    class_report = {"dominant": report["dominant_deficit"], "plan": plan}
-                except AIUnavailable:
-                    stopped_offline = True
-        await s.commit()
-
-    return await render(result={
-        "offline": stopped_offline, "processed": processed, "failed": failed,
-        "group_name": group_name, "class_report": class_report,
-        "message": ("انقطع المحرك أثناء المعالجة؛ حُفظ ما تمّ." if stopped_offline
-                    else f"تمّ توليد {processed} تقرير تدخّل فردي وتقرير القسم.")})
+@router.get("/ai/status", response_class=HTMLResponse)
+async def ai_status(request: Request):
+    """جزء HTMX: يعرض تقدّم مهمّة الذكاء الاصطناعي، ويتوقّف عن الاستطلاع عند الانتهاء."""
+    if (g := require_admin(request)):
+        return g
+    group = request.query_params.get("group", "")
+    job = _AI_JOBS.get(group)
+    return templates.TemplateResponse(
+        "admin/_ai_status.html", _ctx(request, group=group, job=job))
 
 
 @router.get("/texts", response_class=HTMLResponse)
