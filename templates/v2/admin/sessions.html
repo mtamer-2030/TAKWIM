@@ -1,0 +1,54 @@
+{% extends "admin/base.html" %}
+{% block title %}الجلسات · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">الجلسات الصفّية</h2>
+
+<div class="card mb-3"><div class="card-body">
+  <h3 class="card-title">فتح جلسة جديدة</h3>
+  <p class="text-secondary">اختر تقويماً وفوجاً؛ يُنشأ سجلّ حضور لتلاميذ الفوج ثمّ تفتح الجلسة.</p>
+  <form method="post" action="/admin/sessions/create" class="row g-2">
+    <div class="col-md-5"><select name="quiz_id" class="form-select" required>
+      <option value="">— اختر التقويم —</option>
+      {% for q in quizzes %}<option value="{{ q.id }}">{{ q.title }}</option>{% endfor %}
+    </select></div>
+    <div class="col-md-4"><select name="group_name" class="form-select" required>
+      <option value="">— اختر الفوج —</option>
+      {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+    </select></div>
+    <div class="col-md-3"><button class="btn btn-primary w-100">إنشاء جلسة</button></div>
+  </form>
+</div></div>
+
+<div class="card"><div class="table-responsive">
+<table class="table table-vcenter">
+  <thead><tr><th>التقويم</th><th>الفوج</th><th>الحالة</th><th>الحضور</th><th>المسلّمون</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.s.quiz.title if r.s.quiz else '—' }}</td>
+      <td>{{ r.s.group_name }}</td>
+      <td>
+        {% if r.s.status == 'open' %}<span class="badge bg-green">مفتوحة</span>
+        {% elif r.s.status == 'closed' %}<span class="badge bg-secondary">مغلقة</span>
+        {% else %}<span class="badge bg-yellow">مسودّة</span>{% endif %}
+      </td>
+      <td>{{ r.present }} / {{ r.total }}</td>
+      <td>{{ r.subs }}</td>
+      <td class="text-end" style="white-space:nowrap">
+        {% if r.s.status == 'open' %}
+          <a class="btn btn-sm btn-primary" href="/admin/sessions/{{ r.s.id }}/live">المتابعة الآنية</a>
+        {% else %}
+          <a class="btn btn-sm btn-outline-primary" href="/admin/sessions/{{ r.s.id }}">إدارة</a>
+        {% endif %}
+        <form method="post" action="/admin/sessions/{{ r.s.id }}/delete" style="display:inline"
+              onsubmit="return confirm('حذف الجلسة؟ (لا يحذف أجوبة التلاميذ)');">
+          <button class="btn btn-sm btn-outline-danger">حذف</button></form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-secondary">لا جلسات بعد.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

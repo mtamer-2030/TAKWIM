@@ -1,0 +1,33 @@
+<div class="row row-cards mb-3">
+  <div class="col-4"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ present }}</div><div class="text-secondary">حاضر</div></div></div></div>
+  <div class="col-4"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0 text-green">{{ submitted }}</div><div class="text-secondary">سلّم</div></div></div></div>
+  <div class="col-4"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ present - submitted }}</div><div class="text-secondary">قيد الإنجاز</div></div></div></div>
+</div>
+
+{% if sess.status != 'open' %}
+  <div class="alert alert-warning">الجلسة {{ 'مغلقة' if sess.status=='closed' else 'غير مفتوحة' }} — لا يمكن للتلاميذ الدخول الآن.</div>
+{% endif %}
+
+<div class="card"><div class="table-responsive">
+<table class="table table-vcenter">
+  <thead><tr><th>التلميذ</th><th>الحالة</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td><span style="color:{{ r.status[1] }};font-weight:700">{{ r.status[0] }}</span></td>
+      <td class="text-end">
+        {% if r.p.device_token and not r.p.submitted_at %}
+          <form method="post" action="/admin/sessions/{{ sid }}/unlock/{{ r.p.id }}" style="display:inline"
+                onsubmit="return confirm('فكّ قفل جهاز {{ r.name }}؟ سيدخل من جديد.');">
+            <button class="btn btn-sm btn-outline-warning">فكّ القفل</button></form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>

@@ -1,17 +1,34 @@
 <h3 style="margin:.2rem 0 1rem">التقاويم</h3>
-{% for quiz in quizzes %}
-  <a class="pt-card" style="display:flex;justify-content:space-between;align-items:center;color:inherit;text-decoration:none"
-     href="/student/quiz/{{ quiz.id }}">
-    <span>
+
+{% if live_quizzes %}
+  <div style="font-weight:700;color:#2e7d32;margin:.3rem 0">🟢 جلسة مفتوحة الآن</div>
+  {% for quiz in live_quizzes %}
+    <a class="pt-card" style="display:flex;justify-content:space-between;align-items:center;color:inherit;text-decoration:none;border-inline-start:3px solid #2e7d32"
+       href="/student/quiz/{{ quiz.id }}">
       <span style="font-weight:700">{{ quiz.title }}</span>
-      <span class="muted" style="font-size:.85rem"> · {{ quiz.kind }}</span>
-    </span>
-    {% if quiz.id in done %}
-      <span style="color:#2e7d32;font-size:.85rem">مُنجَز ✓ — أعِد المحاولة</span>
-    {% else %}
-      <span style="color:#0d47a1;font-size:.9rem">ابدأ ←</span>
-    {% endif %}
-  </a>
-{% else %}
-  <div class="pt-card muted">لا تقويم متاح لمستوى/فوجك الآن.</div>
-{% endfor %}
+      <span style="color:#2e7d32;font-size:.9rem">ابدأ الآن ←</span>
+    </a>
+  {% endfor %}
+{% endif %}
+
+{% if quizzes %}
+  <div style="font-weight:700;color:#0d47a1;margin:.8rem 0 .3rem">📘 تمارين منزلية</div>
+  {% for quiz in quizzes %}
+    <a class="pt-card" style="display:flex;justify-content:space-between;align-items:center;color:inherit;text-decoration:none"
+       href="/student/quiz/{{ quiz.id }}">
+      <span>
+        <span style="font-weight:700">{{ quiz.title }}</span>
+        <span class="muted" style="font-size:.85rem"> · {{ quiz.kind }}</span>
+      </span>
+      {% if quiz.id in done %}
+        <span style="color:#2e7d32;font-size:.85rem">مُنجَز ✓</span>
+      {% else %}
+        <span style="color:#0d47a1;font-size:.9rem">ابدأ ←</span>
+      {% endif %}
+    </a>
+  {% endfor %}
+{% endif %}
+
+{% if not live_quizzes and not quizzes %}
+  <div class="pt-card muted">لا تقويم متاح الآن. سيفتح الأستاذ الجلسة في حينها.</div>
+{% endif %}

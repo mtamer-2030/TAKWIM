@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+{% block title %}المتابعة الآنية · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">المتابعة الآنية — {{ sess.group_name }}</h2>
+  <div>
+    <a class="btn btn-outline-secondary" href="/admin/sessions/{{ sess.id }}">إدارة</a>
+    <form method="post" action="/admin/sessions/{{ sess.id }}/close" style="display:inline">
+      <button class="btn btn-outline-danger">إغلاق الجلسة</button></form>
+  </div>
+</div>
+
+<div hx-get="/admin/sessions/{{ sess.id }}/live/status"
+     hx-trigger="load, every 3s" hx-swap="innerHTML">
+  <div class="text-secondary">…تحميل الحالة</div>
+</div>
+{% endblock %}

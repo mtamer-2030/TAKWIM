@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}إدارة الجلسة · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">جلسة: {{ sess.quiz.title if sess.quiz else '—' }} — {{ sess.group_name }}</h2>
+  <a class="btn btn-outline-secondary" href="/admin/sessions">→ الجلسات</a>
+</div>
+
+<div class="mb-3">
+  الحالة:
+  {% if sess.status == 'open' %}<span class="badge bg-green">مفتوحة</span>
+  {% elif sess.status == 'closed' %}<span class="badge bg-secondary">مغلقة</span>
+  {% else %}<span class="badge bg-yellow">مسودّة</span>{% endif %}
+</div>
+
+<form method="post" action="/admin/sessions/{{ sess.id }}/attendance">
+  <div class="card mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h3 class="card-title m-0">بوابة الحضور</h3>
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                onclick="document.querySelectorAll('input[name^=present_]').forEach(c=>c.checked=true)">الكلّ حاضر</button>
+        <button class="btn btn-sm btn-primary">حفظ الحضور</button>
+      </div>
+    </div>
+    <p class="text-secondary">أزِل تأشير الغائبين — تُرفض رموزهم طوال الجلسة.</p>
+    <div class="row">
+      {% for p in parts %}
+        <div class="col-md-4 col-6">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="present_{{ p.id }}" {{ 'checked' if p.present }}>
+            <span class="form-check-label">{{ p.student.full_name }}</span>
+          </label>
+        </div>
+      {% else %}
+        <div class="text-secondary">لا تلاميذ في هذا الفوج.</div>
+      {% endfor %}
+    </div>
+  </div></div>
+</form>
+
+<div class="d-flex gap-2">
+  {% if sess.status != 'open' %}
+    <form method="post" action="/admin/sessions/{{ sess.id }}/open">
+      <button class="btn btn-success">فتح الجلسة والانتقال للمتابعة</button></form>
+  {% endif %}
+  {% if sess.status == 'open' %}
+    <a class="btn btn-primary" href="/admin/sessions/{{ sess.id }}/live">المتابعة الآنية</a>
+    <form method="post" action="/admin/sessions/{{ sess.id }}/close">
+      <button class="btn btn-outline-danger">إغلاق الجلسة</button></form>
+  {% endif %}
+</div>
+{% endblock %}

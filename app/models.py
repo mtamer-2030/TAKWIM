@@ -404,11 +404,57 @@ class QuizAnswer(Base):
     student: Mapped["Student"] = relationship()
 
 
+# ═══════════════════════ الجلسات الصفّية (فتح/إغلاق + حضور + قفل جهاز) ═══════════════════════
+# تعيد قدرات مِحَكّ v1 الصفّية فوق التقاويم: جلسة لتقويم على فوج، بوابة حضور،
+# متابعة آنية، قفل جهاز (منع انتحال الرمز)، وفكّ قفل من الأستاذ.
+
+
+class QuizSession(Base):
+    """جلسة تقويم صفّية: تربط تقويماً بفوج، ويديرها الأستاذ (مسودّة/مفتوحة/مغلقة)."""
+
+    __tablename__ = "quiz_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(
+        ForeignKey("quizzes.id", ondelete="CASCADE"), index=True)
+    group_name: Mapped[str] = mapped_column(String(60), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft/open/closed
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    quiz: Mapped["Quiz"] = relationship()
+    participants: Mapped[list["SessionStudent"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan")
+
+
+class SessionStudent(Base):
+    """مشارك في جلسة: حضوره، وقفل جهازه، ووقت تسليمه — يغذّي المتابعة الآنية."""
+
+    __tablename__ = "session_students"
+    __table_args__ = (
+        UniqueConstraint("session_id", "student_id", name="uq_session_student"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("quiz_sessions.id", ondelete="CASCADE"), index=True)
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    present: Mapped[bool] = mapped_column(default=True)              # بوابة الحضور
+    device_token: Mapped[str | None] = mapped_column(String(64), nullable=True)  # قفل الجهاز
+    joined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    session: Mapped["QuizSession"] = relationship(back_populates="participants")
+    student: Mapped["Student"] = relationship()
+
+
 # للاستيراد المريح في Alembic: كلّ الجداول عبر Base.metadata
 __all__ = [
     "Base", "Level", "Module", "Concept", "Axis", "PhilosophicalText",
     "AnalysisQuestion", "EssayExercise", "EvaluationEvent", "Student",
     "Submission", "StudentReport", "ClassReport",
-    "Quiz", "QuizQuestion", "QuizAnswer",
+    "Quiz", "QuizQuestion", "QuizAnswer", "QuizSession", "SessionStudent",
     "TextType", "TargetSkill", "MethodologyType", "EventType",
 ]

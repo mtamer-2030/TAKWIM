@@ -34,6 +34,8 @@ from ..models import (
     Quiz,
     QuizAnswer,
     QuizQuestion,
+    QuizSession,
+    SessionStudent,
     Student,
     StudentReport,
     Submission,
@@ -702,3 +704,180 @@ async def quiz_grade_save(request: Request, quiz_id: int):
             ans.teacher_confirmed = form.get(f"confirm_{ans.id}") == "on"
         await s.commit()
     return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade", status_code=303)
+
+
+# ═══════════════ الجلسات الصفّية (فتح/إغلاق + حضور + متابعة آنية + قفل) ═══════════════
+
+
+def _live_status(p: SessionStudent) -> tuple[str, str]:
+    """حالة التلميذ في الجلسة للمتابعة الآنية: (وصف، لون)."""
+    if not p.present:
+        return ("غائب", "#9e9e9e")
+    if p.submitted_at is not None:
+        return ("سلّم ✓", "#2e7d32")
+    if p.device_token:
+        return ("يجيب…", "#1565c0")
+    return ("لم يدخل", "#c62828")
+
+
+@router.get("/sessions", response_class=HTMLResponse)
+async def sessions_list(request: Request):
+    """لائحة الجلسات الصفّية، وإنشاء جلسة جديدة لتقويم على فوج."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    async with AsyncSessionLocal() as s:
+        sessions = (await s.execute(
+            select(QuizSession).options(selectinload(QuizSession.quiz),
+                                        selectinload(QuizSession.participants))
+            .order_by(QuizSession.created_at.desc()))).scalars().all()
+        quizzes = (await s.execute(select(Quiz).order_by(Quiz.created_at.desc()))).scalars().all()
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+    rows = []
+    for sess in sessions:
+        subs = sum(1 for p in sess.participants if p.submitted_at)
+        present = sum(1 for p in sess.participants if p.present)
+        rows.append({"s": sess, "subs": subs, "present": present,
+                     "total": len(sess.participants)})
+    return templates.TemplateResponse(
+        "admin/sessions.html", _ctx(request, rows=rows, quizzes=quizzes, groups=groups))
+
+
+@router.post("/sessions/create")
+async def session_create(request: Request, quiz_id: int = Form(...),
+                         group_name: str = Form(...)):
+    """ينشئ جلسة (مسودّة) ويضيف تلاميذ الفوج النشطين مشاركين حاضرين افتراضياً."""
+    if (g := require_admin(request)):
+        return g
+    group_name = group_name.strip()
+    async with AsyncSessionLocal() as s:
+        sess = QuizSession(quiz_id=quiz_id, group_name=group_name, status="draft")
+        s.add(sess)
+        await s.flush()
+        students = (await s.execute(
+            select(Student).where(Student.group_name == group_name,
+                                  Student.active.is_(True)))).scalars().all()
+        for st in students:
+            s.add(SessionStudent(session_id=sess.id, student_id=st.id, present=True))
+        await s.commit()
+        sid = sess.id
+    return RedirectResponse(f"/admin/sessions/{sid}", status_code=303)
+
+
+@router.get("/sessions/{sid}", response_class=HTMLResponse)
+async def session_manage(request: Request, sid: int):
+    """إدارة الجلسة: بوابة الحضور، فتح/إغلاق، ورابط المتابعة الآنية."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    async with AsyncSessionLocal() as s:
+        sess = (await s.execute(
+            select(QuizSession).where(QuizSession.id == sid)
+            .options(selectinload(QuizSession.quiz),
+                     selectinload(QuizSession.participants).selectinload(SessionStudent.student)))).scalar_one_or_none()
+    if sess is None:
+        return HTMLResponse("الجلسة غير موجودة", status_code=404)
+    parts = sorted(sess.participants, key=lambda p: p.student.full_name)
+    return templates.TemplateResponse(
+        "admin/session_manage.html", _ctx(request, sess=sess, parts=parts))
+
+
+@router.post("/sessions/{sid}/attendance")
+async def session_attendance(request: Request, sid: int):
+    """يحفظ الحضور: المؤشَّرون حاضرون، والباقون غائبون (تُرفض رموزهم في الجلسة)."""
+    if (g := require_admin(request)):
+        return g
+    form = await request.form()
+    async with AsyncSessionLocal() as s:
+        parts = (await s.execute(
+            select(SessionStudent).where(SessionStudent.session_id == sid))).scalars().all()
+        for p in parts:
+            p.present = form.get(f"present_{p.id}") == "on"
+        await s.commit()
+    return RedirectResponse(f"/admin/sessions/{sid}", status_code=303)
+
+
+@router.post("/sessions/{sid}/open")
+async def session_open(request: Request, sid: int):
+    if (g := require_admin(request)):
+        return g
+    from datetime import datetime
+    async with AsyncSessionLocal() as s:
+        sess = await s.get(QuizSession, sid)
+        if sess:
+            sess.status = "open"
+            sess.opened_at = datetime.now()
+            await s.commit()
+    return RedirectResponse(f"/admin/sessions/{sid}/live", status_code=303)
+
+
+@router.post("/sessions/{sid}/close")
+async def session_close(request: Request, sid: int):
+    if (g := require_admin(request)):
+        return g
+    from datetime import datetime
+    async with AsyncSessionLocal() as s:
+        sess = await s.get(QuizSession, sid)
+        if sess:
+            sess.status = "closed"
+            sess.closed_at = datetime.now()
+            await s.commit()
+    return RedirectResponse(f"/admin/sessions/{sid}", status_code=303)
+
+
+@router.post("/sessions/{sid}/delete")
+async def session_delete(request: Request, sid: int):
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
+        await s.commit()
+    return RedirectResponse("/admin/sessions", status_code=303)
+
+
+@router.get("/sessions/{sid}/live", response_class=HTMLResponse)
+async def session_live(request: Request, sid: int):
+    """شاشة المتابعة الآنية (تُحدَّث ذاتيّاً عبر HTMX)."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        sess = await s.get(QuizSession, sid)
+    if sess is None:
+        return HTMLResponse("الجلسة غير موجودة", status_code=404)
+    return templates.TemplateResponse("admin/session_live.html", _ctx(request, sess=sess))
+
+
+@router.get("/sessions/{sid}/live/status", response_class=HTMLResponse)
+async def session_live_status(request: Request, sid: int):
+    """جزء HTMX: شبكة حالات التلاميذ + العدّادات."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    async with AsyncSessionLocal() as s:
+        sess = (await s.execute(
+            select(QuizSession).where(QuizSession.id == sid)
+            .options(selectinload(QuizSession.participants).selectinload(SessionStudent.student)))).scalar_one_or_none()
+    if sess is None:
+        return HTMLResponse("—", status_code=404)
+    parts = sorted(sess.participants, key=lambda p: p.student.full_name)
+    rows = [{"p": p, "name": p.student.full_name, "status": _live_status(p)} for p in parts]
+    present = sum(1 for p in parts if p.present)
+    submitted = sum(1 for p in parts if p.submitted_at)
+    return templates.TemplateResponse(
+        "admin/_session_live_status.html",
+        _ctx(request, sid=sid, sess=sess, rows=rows, present=present, submitted=submitted))
+
+
+@router.post("/sessions/{sid}/unlock/{part_id}")
+async def session_unlock(request: Request, sid: int, part_id: int):
+    """فكّ قفل جهاز تلميذ (هاتف نفد شحنه/خروج مفاجئ) ليدخل من جديد."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        p = await s.get(SessionStudent, part_id)
+        if p and p.session_id == sid:
+            p.device_token = None      # يسمح بمطالبة جديدة من أي جهاز
+            await s.commit()
+    return RedirectResponse(f"/admin/sessions/{sid}/live", status_code=303)

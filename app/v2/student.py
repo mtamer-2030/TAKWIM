@@ -21,6 +21,8 @@ from ..models import (
     Quiz,
     QuizAnswer,
     QuizQuestion,
+    QuizSession,
+    SessionStudent,
     Student,
 )
 from ..constants import QUESTION_TYPES_CLOSED
@@ -125,13 +127,30 @@ async def tab_lessons(request: Request):
         "student/_lessons.html", _ctx(request, rows=rows))
 
 
-def _quiz_visible_to(student: Student):
-    """شرط رؤية التلميذ للتقويم: منشور + يطابق مستواه (أو عامّ) + فوجه (أو عامّ)."""
+def _homework_visible_to(student: Student):
+    """شرط رؤية التقويم المنشور (منزليّ): منشور + يطابق مستواه/فوجه (أو عامّ)."""
     return (
         Quiz.published.is_(True),
         or_(Quiz.level_id.is_(None), Quiz.level_id == student.level_id),
         or_(Quiz.group_name.is_(None), Quiz.group_name == student.group_name),
     )
+
+
+DEVICE_COOKIE = "pt_device"
+
+
+async def _open_session_for(s, student: Student, quiz_id: int):
+    """يعيد (الجلسة المفتوحة، سجلّ مشاركة التلميذ) لتقويمٍ في فوج التلميذ، أو (None, None)."""
+    sess = await s.scalar(
+        select(QuizSession).where(
+            QuizSession.quiz_id == quiz_id,
+            QuizSession.group_name == student.group_name,
+            QuizSession.status == "open"))
+    if sess is None:
+        return None, None
+    part = await s.scalar(select(SessionStudent).where(
+        SessionStudent.session_id == sess.id, SessionStudent.student_id == student.id))
+    return sess, part
 
 
 @router.get("/tab/assessments", response_class=HTMLResponse)
@@ -140,16 +159,27 @@ async def tab_assessments(request: Request):
     if student is None:
         return HTMLResponse("انتهت الجلسة", status_code=401)
     async with AsyncSessionLocal() as s:
-        quizzes = (await s.execute(
-            select(Quiz).where(*_quiz_visible_to(student))
+        # (1) تقاويم الجلسات المفتوحة لفوج التلميذ حيث هو حاضر
+        session_rows = (await s.execute(
+            select(Quiz).join(QuizSession, QuizSession.quiz_id == Quiz.id)
+            .join(SessionStudent, SessionStudent.session_id == QuizSession.id)
+            .where(QuizSession.status == "open",
+                   QuizSession.group_name == student.group_name,
+                   SessionStudent.student_id == student.id,
+                   SessionStudent.present.is_(True)).distinct())).scalars().all()
+        # (2) التقاويم المنشورة (منزليّة)
+        homework = (await s.execute(
+            select(Quiz).where(*_homework_visible_to(student))
             .order_by(Quiz.created_at.desc()))).scalars().all()
-        # التقاويم التي أجاب عنها التلميذ (لعرض «مُنجَز»)
         done = set((await s.execute(
             select(QuizQuestion.quiz_id)
             .join(QuizAnswer, QuizAnswer.question_id == QuizQuestion.id)
             .where(QuizAnswer.student_id == student.id).distinct())).scalars().all())
+    session_ids = {q.id for q in session_rows}
+    homework = [q for q in homework if q.id not in session_ids]   # لا تكرار
     return templates.TemplateResponse(
-        "student/_assessments.html", _ctx(request, quizzes=quizzes, done=done))
+        "student/_assessments.html",
+        _ctx(request, live_quizzes=session_rows, quizzes=homework, done=done))
 
 
 @router.get("/quiz/{quiz_id}", response_class=HTMLResponse)
@@ -157,14 +187,49 @@ async def take_quiz(request: Request, quiz_id: int):
     student = await _load_student(request)
     if student is None:
         return RedirectResponse("/student", status_code=303)
+    import secrets
+    from datetime import datetime
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
-            select(Quiz).where(Quiz.id == quiz_id, *_quiz_visible_to(student))
+            select(Quiz).where(Quiz.id == quiz_id)
             .options(selectinload(Quiz.questions)))).scalar_one_or_none()
-    if quiz is None:
-        return HTMLResponse("التقويم غير متاح", status_code=404)
-    return templates.TemplateResponse(
-        "student/quiz.html", _ctx(request, quiz=quiz, student=student))
+        if quiz is None:
+            return HTMLResponse("التقويم غير متاح", status_code=404)
+
+        sess, part = await _open_session_for(s, student, quiz_id)
+        set_token = None
+        if sess is not None:
+            # وضع الجلسة الصفّية: بوابة حضور + قفل جهاز
+            if part is None or not part.present:
+                return HTMLResponse(
+                    _blocked("أنت مسجّل غائباً في هذه الجلسة. راجع الأستاذ."), status_code=403)
+            dev = request.cookies.get(DEVICE_COOKIE)
+            if part.device_token is None:
+                set_token = dev or secrets.token_hex(16)
+                part.device_token = set_token
+                part.joined_at = datetime.now()
+                await s.commit()
+            elif dev != part.device_token:
+                return HTMLResponse(
+                    _blocked("هذا التقويم مقفل على جهاز آخر. اطلب من الأستاذ فكّ القفل."),
+                    status_code=403)
+        elif not quiz.published:
+            # لا جلسة مفتوحة ولا منشور
+            return HTMLResponse(
+                _blocked("لا تقويم مفتوح الآن. سيفتحه الأستاذ في حينه."), status_code=403)
+
+        resp = templates.TemplateResponse(
+            "student/quiz.html", _ctx(request, quiz=quiz, student=student))
+    if set_token:
+        resp.set_cookie(DEVICE_COOKIE, set_token, httponly=True, samesite="lax")
+    return resp
+
+
+def _blocked(msg: str) -> str:
+    """صفحة رفض بسيطة للتلميذ مع رابط رجوع."""
+    return (f'<div style="font-family:sans-serif;direction:rtl;text-align:center;padding:2rem">'
+            f'<p style="font-size:1.1rem">{msg}</p>'
+            f'<a href="/student/home" style="color:#0d47a1">→ رجوع</a></div>')
 
 
 def _raw_from_form(q: QuizQuestion, form) -> dict:
@@ -203,13 +268,22 @@ async def submit_quiz(request: Request, quiz_id: int):
     student = await _load_student(request)
     if student is None:
         return RedirectResponse("/student", status_code=303)
+    from datetime import datetime
     form = await request.form()
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
-            select(Quiz).where(Quiz.id == quiz_id, *_quiz_visible_to(student))
+            select(Quiz).where(Quiz.id == quiz_id)
             .options(selectinload(Quiz.questions)))).scalar_one_or_none()
         if quiz is None:
             return HTMLResponse("التقويم غير متاح", status_code=404)
+
+        # يجب أن يكون التقويم متاحاً: جلسة مفتوحة (حاضر) أو منشور منزليّ.
+        sess, part = await _open_session_for(s, student, quiz_id)
+        if sess is not None:
+            if part is None or not part.present:
+                return HTMLResponse(_blocked("لست مسجّلاً في هذه الجلسة."), status_code=403)
+        elif not quiz.published:
+            return HTMLResponse(_blocked("انتهت الجلسة أو أُغلقت."), status_code=403)
 
         results = []
         for q in quiz.questions:
@@ -230,6 +304,9 @@ async def submit_quiz(request: Request, quiz_id: int):
                                  raw=raw, auto_score=graded["score"],
                                  teacher_confirmed=auto_confirm))
             results.append({"q": q, "graded": graded})
+        # تعليم التسليم في الجلسة (للمتابعة الآنية)
+        if sess is not None and part is not None:
+            part.submitted_at = datetime.now()
         await s.commit()
         # فصل النتائج عن الجلسة قبل الإغلاق: نجمع ما تحتاجه القالب فقط.
         feedback = [{
