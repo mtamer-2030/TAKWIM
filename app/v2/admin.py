@@ -111,8 +111,11 @@ async def dashboard(request: Request):
             .join(Student, Student.level_id == Level.id, isouter=True)
             .group_by(Level.id))).all()
     chart = {"labels": [r[0] for r in rows], "data": [r[1] for r in rows]}
+    base = _student_url()                       # عنوان الشبكة المحلّية المكتشَف تلقائياً
     return templates.TemplateResponse(
-        "admin/dashboard.html", _ctx(request, counts=counts, chart=json.dumps(chart)))
+        "admin/dashboard.html",
+        _ctx(request, counts=counts, chart=json.dumps(chart),
+             lan_base=base, student_url=f"{base}/student", auto=bool(lan_url(settings.port))))
 
 
 # ═══════════════ رمز QR لربط هواتف التلاميذ ═══════════════

@@ -3,6 +3,23 @@
 {% block content %}
 <h2 class="h2 mb-3">اللوحة</h2>
 
+<div class="card mb-3" style="border-inline-start:4px solid #0d47a1">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap">
+      <div>
+        <div class="text-secondary">📱 عنوان دخول التلاميذ على الهواتف (مكتشَف تلقائياً):</div>
+        <div class="h2 m-0" dir="ltr"><a href="{{ student_url }}">{{ student_url }}</a></div>
+        {% if auto %}
+          <div class="text-secondary" style="font-size:.85rem">لا حاجة لضبط أي شيء يدوياً — يتغيّر تلقائياً مع شبكتك.</div>
+        {% else %}
+          <div class="text-warning" style="font-size:.85rem">تعذّر كشف عنوان الشبكة؛ يُعرض العنوان من config.ini.</div>
+        {% endif %}
+      </div>
+      <a class="btn btn-primary" href="/admin/qr">عرض رمز QR للطباعة</a>
+    </div>
+  </div>
+</div>
+
 <div class="row row-cards mb-3">
   <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
     <div class="h1 m-0">{{ counts.students }}</div><div class="text-secondary">تلميذ</div>

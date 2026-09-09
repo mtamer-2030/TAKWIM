@@ -27,10 +27,10 @@ if not exist "config.ini" (
   copy config.ini.example config.ini >nul
 )
 
-echo [3/3] تشغيل الخادم على http://0.0.0.0:8000
+echo [3/3] تشغيل الخادم...
 echo.
-echo   لوحة الأستاذ:        http://192.168.1.50:8000/admin
-echo   واجهة التلميذ:       http://192.168.1.50:8000/student
+echo   لوحة الأستاذ على هذا الحاسوب:  http://localhost:8000/admin
+echo   عنوان دخول التلاميذ على الهواتف يظهر تلقائياً أسفله عند الإقلاع.
 echo.
 echo   (اترك هذه النافذة مفتوحة طوال الحصّة. للايقاف: Ctrl+C)
 echo   (لتوليد تقارير الذكاء الاصطناعي: شغّل Ollama ثم افتح /admin/ai)

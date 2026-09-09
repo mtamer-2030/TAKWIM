@@ -21,6 +21,8 @@ from fastapi.responses import RedirectResponse
 
 from app.database import DB_PATH, engine
 from app.models import Base
+from app.netinfo import lan_url
+from app.settings import settings
 from app.v2 import admin as v2_admin
 from app.v2 import student as v2_student
 from app.v2.web import seed_levels
@@ -28,6 +30,24 @@ from app.v2.web import seed_levels
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOAD_DIR = STATIC_DIR / "uploads"
+
+
+def _print_access_banner() -> None:
+    """يطبع العناوين الصحيحة (مكتشَفة تلقائياً) عند الإقلاع — بلا ضبط يدوي."""
+    port = settings.port
+    lan = lan_url(port)
+    line = "═" * 56
+    print("\n" + line)
+    print("   PHILO-TECH v2 — النظام جاهز")
+    print(line)
+    print(f"   لوحة الأستاذ (هذا الحاسوب):  http://localhost:{port}/admin")
+    if lan:
+        print(f"   دخول التلاميذ (الهواتف):     {lan}/student")
+        print(f"   رمز QR للطباعة:              http://localhost:{port}/admin/qr")
+        print("   (العنوان مكتشَف تلقائياً من شبكتك — لا حاجة لضبط يدوي.)")
+    else:
+        print("   تعذّر كشف عنوان الشبكة المحلّية — تحقّق من اتصال الشبكة.")
+    print(line + "\n")
 
 
 @asynccontextmanager
@@ -39,6 +59,7 @@ async def lifespan(_app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await seed_levels()          # يبذر المستويات الثلاثة إن غابت
+    _print_access_banner()       # يطبع العناوين الصحيحة تلقائياً في نافذة التشغيل
     yield
     await engine.dispose()
 
