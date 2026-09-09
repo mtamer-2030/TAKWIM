@@ -102,7 +102,7 @@ def _generate(system_prompt: str, user_prompt: str) -> str:
                   # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
                   # ويحدّ طول المخرَج فتقلّ مدّة التوليد على المعالج.
                   "keep_alive": "30m",
-                  "options": {"num_predict": 500, "temperature": 0.3}},
+                  "options": {"num_predict": 350, "temperature": 0.3}},
             timeout=cfg.timeout,
         )
         resp.raise_for_status()

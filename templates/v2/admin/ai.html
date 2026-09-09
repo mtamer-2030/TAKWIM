@@ -45,8 +45,9 @@
 
 <div class="card">
   <div class="card-body">
-    <p class="text-secondary">تُعالَج التقارير <b>تسلسلياً</b> (تلميذاً تلو الآخر) لتفادي
-      اختناق المعالج وبطاقة الرسوم، ثمّ تُحفظ في قاعدة البيانات.</p>
+    <p class="text-secondary">يُولَّد <b>تقرير القسم أوّلاً</b> (سريع)، ثمّ التقارير الفردية
+      تسلسليّاً. للسرعة القصوى ولّد تقرير القسم وحده، أو استعمل نموذجاً أخفّ (مثل
+      <code>qwen2.5:3b-instruct</code>) في <code>config.ini</code>.</p>
     <form method="post" action="/admin/ai/run">
       <div class="row">
         <div class="col-md-6 mb-2">
@@ -57,9 +58,13 @@
           </select>
         </div>
       </div>
-      <button class="btn btn-primary" {% if not online or not groups %}disabled{% endif %}>
-        توليد تقارير التدخّل العلاجي</button>
-      {% if not online %}<span class="text-secondary">شغّل Ollama لتفعيل الزرّ.</span>{% endif %}
+      <button class="btn btn-outline-primary" name="scope" value="class"
+              {% if not online or not groups %}disabled{% endif %}>
+        تقرير القسم فقط (سريع)</button>
+      <button class="btn btn-primary" name="scope" value="full"
+              {% if not online or not groups %}disabled{% endif %}>
+        تقرير القسم + كل الأفراد</button>
+      {% if not online %}<span class="text-secondary">شغّل Ollama لتفعيل الأزرار.</span>{% endif %}
     </form>
   </div>
 </div>

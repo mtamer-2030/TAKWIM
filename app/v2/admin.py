@@ -369,11 +369,12 @@ async def ai_test(request: Request):
 _AI_JOBS: dict[str, dict] = {}
 
 
-async def _run_ai_job(group_name: str) -> None:
-    """مهمّة خلفية: تولّد تقارير التدخّل تسلسليّاً دون تجميد واجهة الأستاذ.
+async def _run_ai_job(group_name: str, scope: str = "full") -> None:
+    """مهمّة خلفية: تولّد تقارير التدخّل دون تجميد الواجهة.
 
-    نداءات Ollama متزامنة (حاجبة)، فتُنفَّذ في خيط منفصل عبر to_thread حتى لا
-    تحجب حلقة الأحداث. يُحدَّث تقدّم المهمّة ليعرضه شريط التقدّم (HTMX polling).
+    الترتيب: تقرير القسم **أوّلاً** (نداء واحد يظهر بسرعة)، ثمّ التقارير الفردية
+    إن كان النطاق «full». نداءات Ollama الحاجبة تُنفَّذ في خيط (to_thread).
+    scope="class" يكتفي بتقرير القسم (الأسرع).
     """
     import asyncio
     job = _AI_JOBS[group_name]
@@ -383,6 +384,32 @@ async def _run_ai_job(group_name: str) -> None:
                 select(Student).where(Student.group_name == group_name,
                                       Student.active.is_(True))
                 .order_by(Student.full_name))).scalars().all()
+
+            # (1) تقرير القسم أوّلاً — يظهر بسرعة (نداء واحد)
+            report = await generate_class_report(s, group_name)
+            if report["has_data"]:
+                try:
+                    plan = await asyncio.to_thread(generate_class_plan, report)
+                    s.add(ClassReport(
+                        level_id=(students[0].level_id if students else None),
+                        group_name=group_name, skills_summary=report["skills"],
+                        weakest_skill=report["dominant_deficit"],
+                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
+                    job["class_report"] = {"dominant": report["dominant_deficit"], "plan": plan}
+                    await s.commit()
+                except AIUnavailable as exc:
+                    job.update(status="error", offline=True,
+                               message=f"توقّفت المعالجة: {exc}")
+                    return
+
+            if scope == "class":
+                await s.commit()
+                job.update(status="done",
+                           message="تمّ توليد تقرير القسم." if report["has_data"]
+                           else "لا بيانات مصادَقة لهذا الفوج بعد.")
+                return
+
+            # (2) التقارير الفردية — تسلسليّاً
             job["total"] = len(students)
             for st in students:
                 profile = await generate_student_skill_profile(s, st.id)
@@ -400,30 +427,18 @@ async def _run_ai_job(group_name: str) -> None:
                     student_id=st.id, skill_profile=profile["skills"],
                     ai_intervention_plan=plan, ai_model=settings.local_ai.model))
                 job["processed"] += 1
-
-            # تقرير القسم بعد الأفراد
-            report = await generate_class_report(s, group_name)
-            if report["has_data"]:
-                try:
-                    plan = await asyncio.to_thread(generate_class_plan, report)
-                    s.add(ClassReport(
-                        level_id=(students[0].level_id if students else None),
-                        group_name=group_name, skills_summary=report["skills"],
-                        weakest_skill=report["dominant_deficit"],
-                        ai_intervention_plan=plan, ai_model=settings.local_ai.model))
-                    job["class_report"] = {"dominant": report["dominant_deficit"], "plan": plan}
-                except AIUnavailable:
-                    job.update(offline=True)
             await s.commit()
         job.update(status="done",
-                   message=f"تمّ توليد {job['processed']} تقرير تدخّل فردي وتقرير القسم.")
+                   message=f"تمّ توليد تقرير القسم و{job['processed']} تقرير تدخّل فردي.")
     except Exception as exc:  # noqa: BLE001
         job.update(status="error", message=f"خطأ أثناء المعالجة: {exc}")
 
 
 @router.post("/ai/run", response_class=HTMLResponse)
-async def ai_run(request: Request, group_name: str = Form(...)):
-    """يطلق توليد التقارير كمهمّة خلفية ويعرض شريط تقدّم (لا تتجمّد الواجهة)."""
+async def ai_run(request: Request, group_name: str = Form(...), scope: str = Form("full")):
+    """يطلق توليد التقارير كمهمّة خلفية ويعرض شريط تقدّم (لا تتجمّد الواجهة).
+
+    scope: «full» (القسم + كل الأفراد) أو «class» (القسم فقط — الأسرع)."""
     if (g := require_admin(request)):
         return g
     import asyncio
@@ -445,8 +460,9 @@ async def ai_run(request: Request, group_name: str = Form(...)):
 
     _AI_JOBS[group_name] = {"status": "running", "total": 0, "done": 0,
                             "processed": 0, "offline": False, "message": "",
-                            "class_report": None}
-    asyncio.create_task(_run_ai_job(group_name))
+                            "class_report": None,
+                            "scope": scope}
+    asyncio.create_task(_run_ai_job(group_name, scope))
     return await render(job_group=group_name)
 
 
