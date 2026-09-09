@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -34,10 +33,11 @@ UPLOAD_DIR = STATIC_DIR / "uploads"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    # في التطوير فقط: أنشئ الجداول إن لم تُطبَّق هجرات Alembic بعد.
-    if os.environ.get("PHILOTECH_AUTOCREATE") == "1":
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    # ينشئ الجداول الغائبة فقط (آمن وغير هدّام): يضمن ظهور جداول جديدة (مثل
+    # التقاويم) على قواعد قائمة دون إلزام المستخدم بتشغيل Alembic يدوياً.
+    # create_all لا يحذف ولا يعدّل جدولاً موجوداً، إنّما يُنشئ الغائب فقط.
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     await seed_levels()          # يبذر المستويات الثلاثة إن غابت
     yield
     await engine.dispose()

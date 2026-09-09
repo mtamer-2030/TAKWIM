@@ -11,15 +11,20 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_, select
 
+from sqlalchemy.orm import selectinload
+
 from ..database import AsyncSessionLocal
 from ..models import (
     Axis,
-    Level,
     Module,
     PhilosophicalText,
+    Quiz,
+    QuizAnswer,
+    QuizQuestion,
     Student,
     Submission,
 )
+from ..services.quizzes import grade_answer
 from .web import STUDENT_COOKIE, current_student_id, templates
 
 router = APIRouter(prefix="/student")
@@ -102,13 +107,117 @@ async def tab_lessons(request: Request):
         "student/_lessons.html", _ctx(request, rows=rows))
 
 
+def _quiz_visible_to(student: Student):
+    """شرط رؤية التلميذ للتقويم: منشور + يطابق مستواه (أو عامّ) + فوجه (أو عامّ)."""
+    return (
+        Quiz.published.is_(True),
+        or_(Quiz.level_id.is_(None), Quiz.level_id == student.level_id),
+        or_(Quiz.group_name.is_(None), Quiz.group_name == student.group_name),
+    )
+
+
 @router.get("/tab/assessments", response_class=HTMLResponse)
 async def tab_assessments(request: Request):
     student = await _load_student(request)
     if student is None:
         return HTMLResponse("انتهت الجلسة", status_code=401)
-    # تدفّق التقاويم/الإجابة يُبنى لاحقاً (أو يُخدَم من نظام v1). عرض تمهيدي.
-    return templates.TemplateResponse("student/_assessments.html", _ctx(request))
+    async with AsyncSessionLocal() as s:
+        quizzes = (await s.execute(
+            select(Quiz).where(*_quiz_visible_to(student))
+            .order_by(Quiz.created_at.desc()))).scalars().all()
+        # التقاويم التي أجاب عنها التلميذ (لعرض «مُنجَز»)
+        done = set((await s.execute(
+            select(QuizQuestion.quiz_id)
+            .join(QuizAnswer, QuizAnswer.question_id == QuizQuestion.id)
+            .where(QuizAnswer.student_id == student.id).distinct())).scalars().all())
+    return templates.TemplateResponse(
+        "student/_assessments.html", _ctx(request, quizzes=quizzes, done=done))
+
+
+@router.get("/quiz/{quiz_id}", response_class=HTMLResponse)
+async def take_quiz(request: Request, quiz_id: int):
+    student = await _load_student(request)
+    if student is None:
+        return RedirectResponse("/student", status_code=303)
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id, *_quiz_visible_to(student))
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+    if quiz is None:
+        return HTMLResponse("التقويم غير متاح", status_code=404)
+    return templates.TemplateResponse(
+        "student/quiz.html", _ctx(request, quiz=quiz, student=student))
+
+
+def _raw_from_form(q: QuizQuestion, form) -> dict:
+    """يعيد بناء جواب التلميذ الخام حسب نوع السؤال من حقول النموذج."""
+    key = f"q_{q.id}"
+    payload = q.payload or {}
+    if q.qtype == "mcq_single":
+        v = form.get(key)
+        return {"choice": int(v)} if v not in (None, "") and str(v).lstrip("-").isdigit() else {}
+    if q.qtype == "mcq_multi":
+        vals = form.getlist(key)
+        return {"choices": [int(x) for x in vals if str(x).isdigit()]}
+    if q.qtype == "classify":
+        n = len(payload.get("items", []))
+        out = []
+        for k in range(n):
+            v = form.get(f"{key}_item_{k}")
+            out.append(int(v) if v not in (None, "") and str(v).isdigit() else None)
+        return {"assignments": out}
+    if q.qtype == "order":
+        n = len(payload.get("items", []))
+        return {"order": [int(form.get(f"{key}_slot_{k}", -1) or -1) for k in range(n)]}
+    if q.qtype in ("short_text", "long_text"):
+        return {"text": (form.get(f"{key}_text") or "").strip()}
+    if q.qtype == "grid":
+        cols = payload.get("columns", [])
+        rows = int(payload.get("rows", 0) or 0)
+        cells = [[(form.get(f"{key}_c_{ri}_{ci}") or "").strip() for ci in range(len(cols))]
+                 for ri in range(rows)]
+        return {"cells": cells}
+    return {}
+
+
+@router.post("/quiz/{quiz_id}/submit", response_class=HTMLResponse)
+async def submit_quiz(request: Request, quiz_id: int):
+    student = await _load_student(request)
+    if student is None:
+        return RedirectResponse("/student", status_code=303)
+    form = await request.form()
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id, *_quiz_visible_to(student))
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("التقويم غير متاح", status_code=404)
+
+        results = []
+        for q in quiz.questions:
+            raw = _raw_from_form(q, form)
+            graded = grade_answer(q, raw)
+            # حفظ/تحديث الجواب (فريد لكلّ سؤال+تلميذ)
+            existing = await s.scalar(select(QuizAnswer).where(
+                QuizAnswer.question_id == q.id, QuizAnswer.student_id == student.id))
+            if existing:
+                existing.raw = raw
+                existing.auto_score = graded["score"]
+            else:
+                s.add(QuizAnswer(question_id=q.id, student_id=student.id,
+                                 raw=raw, auto_score=graded["score"]))
+            results.append({"q": q, "graded": graded})
+        await s.commit()
+        # فصل النتائج عن الجلسة قبل الإغلاق: نجمع ما تحتاجه القالب فقط.
+        feedback = [{
+            "prompt": r["q"].prompt, "qtype": r["q"].qtype,
+            "score": r["graded"]["score"], "max_score": r["graded"]["max_score"],
+            "auto": r["graded"]["auto"], "feedback": r["graded"]["feedback"],
+        } for r in results]
+    reveal = quiz.reveal_feedback
+    return templates.TemplateResponse(
+        "student/quiz_result.html",
+        _ctx(request, quiz_title=quiz.title, feedback=feedback, reveal=reveal))
 
 
 @router.get("/tab/scores", response_class=HTMLResponse)

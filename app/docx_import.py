@@ -134,7 +134,15 @@ def parse_docx(data: bytes) -> ValidationResult:
     except Exception as exc:  # ملفّ تالف أو ليس docx
         r.fail(f"تعذّرت قراءة ملفّ Word: {exc}")
         return r
+    return parse_lines(lines)
 
+
+def parse_lines(lines: list[str]) -> ValidationResult:
+    """يحلّل أسطر نصّ القالب (Word أو PDF مستخرَج) ويعيد ValidationResult.
+
+    نفس منطق القالب اليقيني: ترويسة، نصوص انطلاق، ثمّ أسئلة — بلا أي ذكاء اصطناعي.
+    """
+    r = ValidationResult()
     header = {"title": None, "kind": None, "level": None, "unit": None, "concept": None}
     stimuli: list[dict] = []
     questions: list[_Q] = []

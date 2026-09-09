@@ -19,6 +19,7 @@ from ..ai_feedback import (
     ollama_available,
 )
 from ..database import AsyncSessionLocal
+from ..docx_import import parse_docx, parse_lines
 from ..importer import ImporterError, extract_text, parse_students_excel
 from ..models import (
     Axis,
@@ -29,6 +30,8 @@ from ..models import (
     Level,
     Module,
     PhilosophicalText,
+    Quiz,
+    QuizQuestion,
     Student,
     StudentReport,
     Submission,
@@ -37,6 +40,7 @@ from ..models import (
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
+from ..services.quizzes import QuizImportError, build_quiz, normalize_quiz_json
 from ..settings import settings
 from .web import (
     ADMIN_COOKIE,
@@ -456,3 +460,103 @@ async def delete_event(request: Request, event_id: int):
         await s.execute(sa_delete(EvaluationEvent).where(EvaluationEvent.id == event_id))
         await s.commit()
     return RedirectResponse("/admin/events", status_code=303)
+
+
+# ═══════════════ التقاويم بالأسئلة (استيراد JSON/Word/PDF → أسئلة مغلقة/مفتوحة) ═══════════════
+
+
+def _normalize_quiz_upload(filename: str, data: bytes) -> tuple[dict | None, list[str]]:
+    """يحوّل ملفّاً مرفوعاً إلى صيغة تقويم مطبّعة. يدعم JSON وWord وPDF.
+
+    يعيد (normalized أو None، قائمة أخطاء). التحويل يقينيّ بالكامل — لا ذكاء اصطناعي.
+    """
+    name = (filename or "").lower()
+    try:
+        if name.endswith(".json"):
+            payload = json.loads(data.decode("utf-8"))
+            return normalize_quiz_json(payload), []
+        if name.endswith(".docx"):
+            r = parse_docx(data)                       # قالب Word اليقيني
+            return (r.normalized, []) if r.ok else (None, r.errors)
+        # PDF أو أي نصّ: نستخرج النصّ ثمّ نحلّله بمنطق القالب نفسه.
+        text = extract_text(filename, data)
+        r = parse_lines(text.splitlines())
+        return (r.normalized, []) if r.ok else (None, r.errors)
+    except QuizImportError as exc:
+        return None, exc.errors
+    except json.JSONDecodeError as exc:
+        return None, [f"ملفّ JSON غير صالح: {exc}"]
+    except ImporterError as exc:
+        return None, [str(exc)]
+    except Exception as exc:  # noqa: BLE001
+        return None, [f"تعذّر تحويل الملفّ: {exc}"]
+
+
+@router.get("/quizzes", response_class=HTMLResponse)
+async def quizzes(request: Request):
+    """لائحة التقاويم بالأسئلة، مع عدد الأسئلة، وإسناد الفوج/المستوى، والنشر، والحذف."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        rows = (await s.execute(
+            select(Quiz, func.count(QuizQuestion.id))
+            .join(QuizQuestion, QuizQuestion.quiz_id == Quiz.id, isouter=True)
+            .group_by(Quiz.id).order_by(Quiz.created_at.desc()))).all()
+        levels = (await s.execute(select(Level).order_by(Level.position))).scalars().all()
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+    return templates.TemplateResponse(
+        "admin/quizzes.html",
+        _ctx(request, rows=rows, levels=levels, groups=groups,
+             error=request.query_params.get("error"),
+             saved=request.query_params.get("saved")))
+
+
+@router.post("/quizzes/import")
+async def quizzes_import(request: Request, file: UploadFile = File(...),
+                         level_id: str = Form(""), group_name: str = Form("")):
+    """رفع تقويم (JSON/Word/PDF) → أسئلة. تصحيح صارم؛ عند الخطأ تُعرَض الأسباب."""
+    if (g := require_admin(request)):
+        return g
+    data = await file.read()
+    normalized, errors = _normalize_quiz_upload(file.filename, data)
+    if normalized is None:
+        msg = " | ".join(errors) or "تعذّر تحويل الملفّ."
+        return RedirectResponse(f"/admin/quizzes?error={msg}", status_code=303)
+    lid = int(level_id) if level_id.strip().isdigit() else None
+    async with AsyncSessionLocal() as s:
+        quiz = build_quiz(normalized, level_id=lid, group_name=group_name.strip() or None)
+        s.add(quiz)
+        await s.commit()
+        n = len(quiz.questions)
+    return RedirectResponse(
+        f"/admin/quizzes?saved=تمّ استيراد «{normalized['title']}» بـ{n} سؤالاً.",
+        status_code=303)
+
+
+@router.post("/quizzes/{quiz_id}/assign")
+async def quiz_assign(request: Request, quiz_id: int, level_id: str = Form(""),
+                      group_name: str = Form(""), published: str = Form("")):
+    """إسناد التقويم إلى مستوى/فوج وضبط نشره (رؤية التلاميذ له)."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        quiz = await s.get(Quiz, quiz_id)
+        if quiz:
+            quiz.level_id = int(level_id) if level_id.strip().isdigit() else None
+            quiz.group_name = group_name.strip() or None
+            quiz.published = (published == "on")
+            await s.commit()
+    return RedirectResponse("/admin/quizzes", status_code=303)
+
+
+@router.post("/quizzes/{quiz_id}/delete")
+async def quiz_delete(request: Request, quiz_id: int):
+    """حذف تقويم وكلّ أسئلته وأجوبته بالتتالي."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        await s.execute(sa_delete(Quiz).where(Quiz.id == quiz_id))
+        await s.commit()
+    return RedirectResponse("/admin/quizzes", status_code=303)

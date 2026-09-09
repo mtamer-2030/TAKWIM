@@ -327,10 +327,88 @@ class ClassReport(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+# ═══════════════════════ التقاويم بالأسئلة (مغلقة/مفتوحة + تغذية راجعة) ═══════════════════════
+# نظام مستقلّ يُعيد قدرات v1: تقويم يتحوّل إلى أسئلة تُعرض على المتعلّم، تُصحَّح
+# المغلقة يقينياً فوراً (تغذية راجعة)، وتُصحَّح المفتوحة جزئياً بقواعد check_rule
+# والباقي ينتظر الأستاذ. أنواع الأسئلة والحمولة (payload) نصّية JSON كما في v1،
+# فتُعاد محرّكات v1 (validation/scoring) دون تغيير.
+
+
+class Quiz(Base):
+    """تقويم بأسئلة: يُعرض على فوج/مستوى. مستقلّ عن النصوص الفلسفية."""
+
+    __tablename__ = "quizzes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(20), default="exercise")  # diagnostic/exercise/exam
+    level_id: Mapped[int | None] = mapped_column(
+        ForeignKey("levels.id", ondelete="SET NULL"), nullable=True, index=True)
+    group_name: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    unit: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    concept: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reveal_feedback: Mapped[bool] = mapped_column(default=True)  # عرض التغذية الراجعة للمغلقة
+    published: Mapped[bool] = mapped_column(default=True)        # مرئيّ للتلاميذ
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    questions: Mapped[list["QuizQuestion"]] = relationship(
+        back_populates="quiz", cascade="all, delete-orphan",
+        order_by="QuizQuestion.position")
+    level: Mapped["Level | None"] = relationship()
+
+
+class QuizQuestion(Base):
+    """سؤال تقويم: نوعه وحمولته نصّية JSON (خيارات/صحيح/تشخيصات/مؤشّرات) كما في v1."""
+
+    __tablename__ = "quiz_questions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(
+        ForeignKey("quizzes.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    qtype: Mapped[str] = mapped_column(String(20))     # mcq_single/mcq_multi/classify/order/short_text/long_text/grid
+    competency: Mapped[str | None] = mapped_column(String(30), nullable=True)  # كفاية v1
+    prompt: Mapped[str] = mapped_column(Text)
+    stimulus: Mapped[str | None] = mapped_column(Text, nullable=True)  # نصّ انطلاق محلول
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)          # options/correct/items/diagnostics…
+    indicators: Mapped[list | None] = mapped_column(JSON, nullable=True)  # للمفتوحة
+    penalties: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    max_score: Mapped[float] = mapped_column(Float, default=0)
+    auto_scored: Mapped[bool] = mapped_column(default=False)
+
+    quiz: Mapped["Quiz"] = relationship(back_populates="questions")
+    answers: Mapped[list["QuizAnswer"]] = relationship(
+        back_populates="question", cascade="all, delete-orphan")
+
+
+class QuizAnswer(Base):
+    """جواب تلميذ على سؤال تقويم: خام + نقطة يقينية (تلقائية) + نقطة الأستاذ."""
+
+    __tablename__ = "quiz_answers"
+    __table_args__ = (
+        UniqueConstraint("question_id", "student_id", name="uq_quiz_answer"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("quiz_questions.id", ondelete="CASCADE"), index=True)
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # جواب التلميذ الخام
+    auto_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    teacher_confirmed: Mapped[bool] = mapped_column(default=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    question: Mapped["QuizQuestion"] = relationship(back_populates="answers")
+    student: Mapped["Student"] = relationship()
+
+
 # للاستيراد المريح في Alembic: كلّ الجداول عبر Base.metadata
 __all__ = [
     "Base", "Level", "Module", "Concept", "Axis", "PhilosophicalText",
     "AnalysisQuestion", "EssayExercise", "EvaluationEvent", "Student",
     "Submission", "StudentReport", "ClassReport",
+    "Quiz", "QuizQuestion", "QuizAnswer",
     "TextType", "TargetSkill", "MethodologyType", "EventType",
 ]

@@ -1,0 +1,78 @@
+{% extends "admin/base.html" %}
+{% block title %}التقاويم بالأسئلة · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">التقاويم بالأسئلة (مغلقة/مفتوحة + تغذية راجعة)</h2>
+
+{% if saved %}<div class="alert alert-success">{{ saved }}</div>{% endif %}
+{% if error %}<div class="alert alert-danger" style="white-space:pre-wrap">{{ error }}</div>{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <h3 class="card-title">استيراد تقويم</h3>
+  <p class="text-secondary">
+    الصيغ المدعومة: <b>JSON</b> (صيغة v1)، <b>Word (.docx)</b> بقالب مِحَكّ،
+    و<b>PDF</b> بنفس بنية القالب. التحويل يقينيّ بالكامل — بلا ذكاء اصطناعي.
+    يتحوّل التقويم إلى أسئلة مغلقة (اختيار/تصنيف/ترتيب) أو مفتوحة، وتُعرض على المتعلّمين.
+  </p>
+  <form method="post" action="/admin/quizzes/import" enctype="multipart/form-data">
+    <div class="row">
+      <div class="col-md-5 mb-2">
+        <label class="form-label">الملفّ (JSON / Word / PDF)</label>
+        <input type="file" name="file" class="form-control" accept=".json,.docx,.pdf" required>
+      </div>
+      <div class="col-md-3 mb-2">
+        <label class="form-label">المستوى (اختياري)</label>
+        <select name="level_id" class="form-select">
+          <option value="">— كل المستويات —</option>
+          {% for lv in levels %}<option value="{{ lv.id }}">{{ lv.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 mb-2">
+        <label class="form-label">الفوج (اختياري)</label>
+        <input name="group_name" class="form-control" list="grouplist" placeholder="مثل TC1">
+        <datalist id="grouplist">{% for g in groups %}<option value="{{ g }}">{% endfor %}</datalist>
+      </div>
+      <div class="col-md-1 mb-2 d-flex align-items-end">
+        <button class="btn btn-primary w-100">استيراد</button>
+      </div>
+    </div>
+  </form>
+</div></div>
+
+<div class="card"><div class="table-responsive">
+<table class="table">
+  <thead><tr><th>العنوان</th><th>النوع</th><th>الأسئلة</th><th>الإسناد</th><th>منشور؟</th><th></th></tr></thead>
+  <tbody>
+  {% for quiz, qcount in rows %}
+    <tr>
+      <td>{{ quiz.title }}</td>
+      <td class="text-secondary">{{ quiz.kind }}</td>
+      <td>{{ qcount }}</td>
+      <td>
+        <form method="post" action="/admin/quizzes/{{ quiz.id }}/assign" class="row g-1">
+          <div class="col-auto"><select name="level_id" class="form-select form-select-sm">
+            <option value="">— مستوى —</option>
+            {% for lv in levels %}<option value="{{ lv.id }}" {{ 'selected' if quiz.level_id==lv.id }}>{{ lv.name }}</option>{% endfor %}
+          </select></div>
+          <div class="col-auto"><input name="group_name" class="form-control form-control-sm"
+                 style="width:6rem" value="{{ quiz.group_name or '' }}" placeholder="فوج"></div>
+          <div class="col-auto"><label class="form-check form-switch mt-1">
+            <input class="form-check-input" type="checkbox" name="published" {{ 'checked' if quiz.published }}>
+          </label></div>
+          <div class="col-auto"><button class="btn btn-sm btn-outline-primary">حفظ</button></div>
+        </form>
+      </td>
+      <td>{{ '✓' if quiz.published else '—' }}</td>
+      <td class="text-end">
+        <form method="post" action="/admin/quizzes/{{ quiz.id }}/delete"
+              onsubmit="return confirm('حذف التقويم «{{ quiz.title }}» وكل أسئلته وأجوبته؟ لا رجعة.');">
+          <button class="btn btn-sm btn-outline-danger">حذف</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-secondary">لا تقاويم بعد. استورد ملفّاً أعلاه.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+{% endblock %}

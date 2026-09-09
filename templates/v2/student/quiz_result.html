@@ -1,0 +1,39 @@
+{% extends "student/base.html" %}
+{% block title %}نتيجة · {{ quiz_title }}{% endblock %}
+{% block body %}
+<div class="pt-shell">
+  <div class="pt-header">
+    <span class="brand">PHILO-TECH</span>
+    <a href="/student/home" style="color:#ffd7d7;font-size:.9rem">→ رجوع</a>
+  </div>
+  <div class="pt-main">
+    <h3 style="margin:.2rem 0 1rem">تمّ التسليم — {{ quiz_title }}</h3>
+
+    {% if reveal %}
+      <div class="pt-card muted" style="margin-bottom:1rem">
+        التغذية الراجعة الفورية للأسئلة المغلقة. الأسئلة المفتوحة يراجعها الأستاذ.
+      </div>
+      {% for f in feedback %}
+        <div class="pt-card" style="margin-bottom:.7rem">
+          <div style="font-weight:700">{{ loop.index }}. {{ f.prompt }}</div>
+          {% if f.auto %}
+            <div style="margin-top:.3rem;color:{{ '#2e7d32' if (f.score is not none and f.max_score and f.score >= f.max_score) else '#c62828' }}">
+              {{ f.feedback }}
+            </div>
+          {% else %}
+            <div class="muted" style="margin-top:.3rem;font-size:.9rem">سؤال مفتوح — بانتظار تصحيح الأستاذ.</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="pt-card">
+        استلم الأستاذ إجاباتك. لن تظهر النقط هنا (يراجعها الأستاذ أوّلاً).
+      </div>
+    {% endif %}
+
+    <a href="/student/home" style="display:block;text-align:center;margin-top:1rem;padding:.7rem;background:#0d47a1;color:#fff;border-radius:.5rem;text-decoration:none">
+      العودة إلى الرئيسة
+    </a>
+  </div>
+</div>
+{% endblock %}
