@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% block title %}تقرير {{ data.student.full_name }} · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
+  <h2 class="h2 m-0">التقرير التراكميّ — {{ data.student.full_name }}</h2>
+  <div>
+    <button class="btn btn-outline-secondary" onclick="window.print()">🖨️ طباعة</button>
+    <a class="btn btn-outline-secondary" href="/admin/gradebook?group={{ data.student.group_name or '' }}">→ الفوج</a>
+  </div>
+</div>
+
+<div class="row row-cards mb-3">
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ data.overall ~ '٪' if data.overall is not none else '—' }}</div>
+    <div class="text-secondary">المعدّل العامّ</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0">{{ data.evaluations|length }}</div>
+    <div class="text-secondary">تقويم</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h1 m-0" style="color:{{ '#2e7d32' if (data.trend or 0) >= 0 else '#c62828' }}">
+      {{ ('+' if (data.trend or 0) >= 0 else '') ~ data.trend ~ ' نقطة' if data.trend is not none else '—' }}</div>
+    <div class="text-secondary">التطوّر (أوّل→آخر)</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+    <div class="h3 m-0">{{ data.student.group_name or '—' }}</div>
+    <div class="text-secondary">الفوج</div></div></div></div>
+</div>
+
+{% if data.has_data %}
+  <div class="row row-cards mb-3">
+    <div class="col-md-7"><div class="card"><div class="card-body">
+      <h3 class="card-title">تطوّر النسبة عبر التقاويم</h3>
+      <canvas id="trend" height="160"></canvas>
+    </div></div></div>
+    <div class="col-md-5"><div class="card"><div class="card-body">
+      <h3 class="card-title">ملمح المهارات</h3>
+      <canvas id="radar" height="160"></canvas>
+    </div></div></div>
+  </div>
+
+  <div class="card"><div class="table-responsive">
+  <table class="table">
+    <thead><tr><th>التاريخ</th><th>التقويم</th><th>النوع</th><th class="text-center">النسبة</th></tr></thead>
+    <tbody>
+    {% for e in data.evaluations %}
+      <tr><td>{{ e.date }}</td><td>{{ e.title }}</td><td class="text-secondary">{{ e.kind }}</td>
+          <td class="text-center"><b>{{ e.pct ~ '٪' if e.pct is not none else '—' }}</b></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div></div>
+{% else %}
+  <div class="alert alert-info">لا تقاويم مصادَق عليها بعد لهذا التلميذ.</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if data.has_data %}
+<script>
+(function(){
+  var c = {{ chart|safe }}, r = {{ radar|safe }};
+  if (window.Chart && document.getElementById("trend"))
+    new Chart(document.getElementById("trend"), {
+      type: "line",
+      data: { labels: c.labels, datasets: [{ label: "٪", data: c.values,
+              borderColor: "#0d47a1", backgroundColor: "rgba(13,71,161,.12)", fill: true, tension: .3 }] },
+      options: { plugins: { legend: { display: false } },
+                 scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "٪" } } } }
+    });
+  if (window.Chart && document.getElementById("radar"))
+    new Chart(document.getElementById("radar"), {
+      type: "radar",
+      data: { labels: r.labels, datasets: [{ data: r.values, fill: true,
+              backgroundColor: "rgba(13,71,161,.18)", borderColor: "#0d47a1" }] },
+      options: { plugins: { legend: { display: false } },
+                 scales: { r: { min: 0, max: 100, ticks: { display: false } } } }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

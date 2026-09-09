@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% block title %}التقارير التراكمية · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">التقارير التراكمية — دفتر النقط</h2>
+
+<form method="get" action="/admin/gradebook" class="mb-3 d-flex gap-2" style="max-width:24rem">
+  <select name="group" class="form-select" onchange="this.form.submit()">
+    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g==selected }}>{{ g }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn btn-primary">عرض</button></noscript>
+</form>
+
+{% if data and data.has_data %}
+  <div class="card mb-3"><div class="card-body">
+    <h3 class="card-title">تطوّر معدّل القسم عبر التقاويم
+      {% if data.class_overall is not none %}<span class="text-secondary">— المعدّل العامّ {{ data.class_overall }}٪</span>{% endif %}
+    </h3>
+    <canvas id="classTrend" height="90"></canvas>
+  </div></div>
+
+  <div class="card"><div class="table-responsive">
+  <table class="table table-vcenter table-sm">
+    <thead><tr>
+      <th style="position:sticky;inline-start:0;background:#fff">التلميذ</th>
+      {% for e in data.evaluations %}
+        <th class="text-center" title="{{ e.date }}">
+          {{ e.title[:16] }}{% if e.kind=='diagnostic' %} 🩺{% endif %}<br>
+          <span class="text-secondary" style="font-weight:400;font-size:.75rem">{{ e.date }}</span>
+        </th>
+      {% endfor %}
+      <th class="text-center">المعدّل</th>
+    </tr></thead>
+    <tbody>
+    {% for row in data.students %}
+      <tr>
+        <td style="position:sticky;inline-start:0;background:#fff;white-space:nowrap">
+          <a href="/admin/gradebook/student/{{ row.student.id }}">{{ row.student.full_name }}</a></td>
+        {% for e in data.evaluations %}
+          {% set v = row.per[e.quiz_id] %}
+          <td class="text-center" style="{% if v is not none %}background:{{ 'rgba(46,125,50,.13)' if v>=50 else 'rgba(198,40,40,.10)' }}{% endif %}">
+            {{ v ~ '٪' if v is not none else '—' }}</td>
+        {% endfor %}
+        <td class="text-center"><b>{{ row.overall ~ '٪' if row.overall is not none else '—' }}</b></td>
+      </tr>
+    {% endfor %}
+      <tr style="border-top:2px solid #0d47a1">
+        <td style="position:sticky;inline-start:0;background:#fff"><b>معدّل القسم</b></td>
+        {% for e in data.evaluations %}
+          <td class="text-center"><b>{{ e.class_avg ~ '٪' if e.class_avg is not none else '—' }}</b></td>
+        {% endfor %}
+        <td class="text-center"><b>{{ data.class_overall ~ '٪' if data.class_overall is not none else '—' }}</b></td>
+      </tr>
+    </tbody>
+  </table>
+  </div></div>
+  <p class="text-secondary mt-2" style="font-size:.85rem">
+    النِّسب من الأسئلة المصادَق عليها فقط. اضغط اسم التلميذ لتقريره الفرديّ التراكميّ. 🩺 = تقويم تشخيصي.</p>
+{% else %}
+  <div class="alert alert-info">لا تقاويم مصادَق عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً من «التقاويم بالأسئلة ← تصحيح».</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if data and data.has_data %}
+<script>
+(function(){
+  var evals = {{ data.evaluations | map(attribute='date') | list | tojson }};
+  var avgs = {{ data.evaluations | map(attribute='class_avg') | list | tojson }};
+  var el = document.getElementById("classTrend");
+  if (el && window.Chart) new Chart(el, {
+    type: "line",
+    data: { labels: evals, datasets: [{ label: "معدّل القسم ٪", data: avgs,
+            borderColor: "#0d47a1", backgroundColor: "rgba(13,71,161,.12)", fill: true, tension: .3 }] },
+    options: { plugins: { legend: { display: false } },
+               scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "٪" } } } }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

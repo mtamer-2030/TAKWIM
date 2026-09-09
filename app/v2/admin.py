@@ -45,6 +45,7 @@ from ..models import (
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
+from ..services.gradebook import class_gradebook, student_gradebook
 from ..constants import QUESTION_TYPES_CLOSED
 from ..services.quizzes import (
     QuizImportError,
@@ -894,3 +895,42 @@ async def session_unlock(request: Request, sid: int, part_id: int):
             p.device_token = None      # يسمح بمطالبة جديدة من أي جهاز
             await s.commit()
     return RedirectResponse(f"/admin/sessions/{sid}/live", status_code=303)
+
+
+# ═══════════════ التقارير التراكمية (دفتر النقط عبر الموسم) ═══════════════
+
+
+@router.get("/gradebook", response_class=HTMLResponse)
+async def gradebook(request: Request):
+    """تقرير الفوج التراكميّ: مصفوفة (تلاميذ × تقاويم) بالنِّسب + معدّل القسم زمنيّاً."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+        selected = request.query_params.get("group") or (groups[0] if groups else None)
+        data = await class_gradebook(s, selected) if selected else None
+    return templates.TemplateResponse(
+        "admin/gradebook.html",
+        _ctx(request, groups=groups, selected=selected, data=data))
+
+
+@router.get("/gradebook/student/{student_id}", response_class=HTMLResponse)
+async def gradebook_student(request: Request, student_id: int):
+    """تقرير تلميذ تراكميّ: منحنى نسبته عبر التقاويم + رادار المهارات + جدول قابل للطباعة."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        data = await student_gradebook(s, student_id)
+    if data["student"] is None:
+        return HTMLResponse("التلميذ غير موجود", status_code=404)
+    import json as _json
+    chart = {"labels": [e["date"] + " · " + e["title"][:18] for e in data["evaluations"]],
+             "values": [e["pct"] for e in data["evaluations"]]}
+    skills = data["skills"]
+    radar = {"labels": list(skills.keys()),
+             "values": [round((skills[k]["avg"] or 0) * 100, 1) for k in skills]}
+    return templates.TemplateResponse(
+        "admin/gradebook_student.html",
+        _ctx(request, data=data, chart=_json.dumps(chart), radar=_json.dumps(radar)))
