@@ -50,11 +50,17 @@ class Settings:
 
 
 def _read_ini() -> configparser.ConfigParser:
-    cp = configparser.ConfigParser()
+    # strict=False يتسامح مع تكرار الأقسام/المفاتيح (يفوز الأخير) فلا يتعطّل
+    # الخادم إن كرّر المستخدم قسماً في config.ini سهواً.
+    cp = configparser.ConfigParser(strict=False)
     # config.ini إن وُجد، وإلّا المثال، وإلّا الافتراضات المدمجة.
     for path in (CONFIG_PATH, EXAMPLE_PATH):
         if path.exists():
-            cp.read(path, encoding="utf-8")
+            try:
+                cp.read(path, encoding="utf-8")
+            except configparser.Error:
+                # إعداد تالف: نتجاهله ونعتمد الافتراضات المدمجة بدل تعطّل الخادم.
+                return configparser.ConfigParser(strict=False)
             break
     return cp
 
