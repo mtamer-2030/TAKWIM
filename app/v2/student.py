@@ -23,6 +23,7 @@ from ..models import (
     QuizQuestion,
     Student,
 )
+from ..constants import QUESTION_TYPES_CLOSED
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
 from .web import STUDENT_COOKIE, current_student_id, templates
@@ -214,15 +215,20 @@ async def submit_quiz(request: Request, quiz_id: int):
         for q in quiz.questions:
             raw = _raw_from_form(q, form)
             graded = grade_answer(q, raw)
+            # المصادقة الآلية للأسئلة المغلقة (تصحيح يقيني) — تدخل التقارير فوراً كما في v1.
+            # المفتوحة تبقى غير مصادَقة حتى يراجعها الأستاذ في شاشة التصحيح.
+            auto_confirm = q.qtype in QUESTION_TYPES_CLOSED
             # حفظ/تحديث الجواب (فريد لكلّ سؤال+تلميذ)
             existing = await s.scalar(select(QuizAnswer).where(
                 QuizAnswer.question_id == q.id, QuizAnswer.student_id == student.id))
             if existing:
                 existing.raw = raw
                 existing.auto_score = graded["score"]
+                existing.teacher_confirmed = auto_confirm
             else:
                 s.add(QuizAnswer(question_id=q.id, student_id=student.id,
-                                 raw=raw, auto_score=graded["score"]))
+                                 raw=raw, auto_score=graded["score"],
+                                 teacher_confirmed=auto_confirm))
             results.append({"q": q, "graded": graded})
         await s.commit()
         # فصل النتائج عن الجلسة قبل الإغلاق: نجمع ما تحتاجه القالب فقط.

@@ -375,9 +375,9 @@ async def _run_ai_job(group_name: str) -> None:
                     continue
                 try:
                     plan = await asyncio.to_thread(generate_student_plan, profile)
-                except AIUnavailable:
+                except AIUnavailable as exc:
                     job.update(status="error", offline=True,
-                               message="انقطع المحرّك أثناء المعالجة؛ حُفظ ما تمّ.")
+                               message=f"توقّفت المعالجة (حُفظ ما تمّ): {exc}")
                     await s.commit()
                     return
                 s.add(StudentReport(

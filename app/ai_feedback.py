@@ -98,7 +98,11 @@ def _generate(system_prompt: str, user_prompt: str) -> str:
         resp = httpx.post(
             f"{cfg.base_url}/api/generate",
             json={"model": cfg.model, "system": system_prompt,
-                  "prompt": user_prompt, "stream": False},
+                  "prompt": user_prompt, "stream": False,
+                  # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
+                  # ويحدّ طول المخرَج فتقلّ مدّة التوليد على المعالج.
+                  "keep_alive": "30m",
+                  "options": {"num_predict": 500, "temperature": 0.3}},
             timeout=cfg.timeout,
         )
         resp.raise_for_status()
@@ -109,8 +113,13 @@ def _generate(system_prompt: str, user_prompt: str) -> str:
         return text
     except AIUnavailable:
         raise
+    except httpx.TimeoutException as e:
+        # مهلة: المحرك مشغّل لكنّه بطيء (تحميل النموذج/معالج بلا بطاقة رسوم).
+        raise AIUnavailable(
+            "المحرّك المحلّي بطيء (قد يُحمّل النموذج لأوّل مرّة). أعد المحاولة، "
+            "أو زد المهلة في config.ini، أو استعمل نموذجاً أخفّ.") from e
     except Exception as e:
-        # ConnectionRefused / Timeout / ConnectError / أي خطأ اتصال ← تدهور لطيف
+        # ConnectionRefused / ConnectError / أي خطأ اتصال ← تدهور لطيف
         raise AIUnavailable(OFFLINE_MESSAGE) from e
 
 

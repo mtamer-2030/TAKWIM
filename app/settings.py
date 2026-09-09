@@ -37,7 +37,7 @@ class LocalAI:
     enabled: bool = True
     base_url: str = "http://localhost:11434"
     model: str = "qwen2.5:7b-instruct"
-    timeout: int = 120
+    timeout: int = 300
 
 
 @dataclass
@@ -72,7 +72,7 @@ def load_settings() -> Settings:
             enabled=cp.getboolean("local_ai", "enabled", fallback=True),
             base_url=cp.get("local_ai", "base_url", fallback="http://localhost:11434"),
             model=cp.get("local_ai", "model", fallback="qwen2.5:7b-instruct"),
-            timeout=cp.getint("local_ai", "timeout", fallback=120),
+            timeout=cp.getint("local_ai", "timeout", fallback=300),
         )
     if cp.has_section("evening_ai"):
         s.evening = EveningAI(

@@ -90,6 +90,7 @@
     {
       "type": "long_text",
       "competency": "synthesis",
+      "stimulus": "s1",
       "prompt": "اكتب فقرة تركيبية تبرز حدود أطروحة النصّ.",
       "max_score": 4,
       "payload": {
