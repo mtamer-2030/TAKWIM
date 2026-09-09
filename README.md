@@ -98,8 +98,8 @@ public_url = http://192.168.1.50:8000
 [local_ai]
 enabled  = true                     ; المحرّك المحلّي على طاولة الأستاذ فقط
 base_url = http://localhost:11434   ; Ollama محلّياً — لا سحابة ولا إنترنت
-model    = qwen2.5:7b-instruct
-timeout  = 120
+model    = qwen2.5:3b-instruct
+timeout  = 300
 ```
 
 `config.ini` **لا يُرفع إلى المستودع** (مُستثنى في `.gitignore`)، وكذلك كل ملفّات `*.db`.
@@ -115,7 +115,7 @@ timeout  = 120
 2. نزّل نموذجاً عربيّاً مناسباً، مثلاً:
 
    ```bash
-   ollama pull qwen2.5:7b-instruct
+   ollama pull qwen2.5:3b-instruct
    ollama serve            # يستمع على http://localhost:11434
    ```
 

@@ -17,9 +17,9 @@ public_url = http://192.168.1.50:8000
 ; على طاولة الأستاذ فقط، لا داخل القاعة. لا سحابة، لا إنترنت.
 enabled = true
 base_url = http://localhost:11434
-; ثبّت النموذج بـ: ollama pull qwen2.5:7b-instruct  (أو أي نموذج عربي مناسب)
-model = qwen2.5:7b-instruct
-timeout = 120
+; ثبّت النموذج بـ: ollama pull qwen2.5:3b-instruct  (خفيف وسريع؛ 7b أثقل ويتطلّب ذاكرة كرت أكبر)
+model = qwen2.5:3b-instruct
+timeout = 300
 
 [evening_ai]
 ; المساعدة المسائية وحدها — لا تُستدعى أثناء أي جلسة إطلاقاً.

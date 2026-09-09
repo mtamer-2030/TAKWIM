@@ -36,7 +36,7 @@ class LocalAI:
     """محرك ذكاء اصطناعي محلّي (Ollama/LM Studio) — للتقارير وخطط التدخّل فقط."""
     enabled: bool = True
     base_url: str = "http://localhost:11434"
-    model: str = "qwen2.5:7b-instruct"
+    model: str = "qwen2.5:3b-instruct"
     timeout: int = 300
 
 
@@ -71,7 +71,7 @@ def load_settings() -> Settings:
         s.local_ai = LocalAI(
             enabled=cp.getboolean("local_ai", "enabled", fallback=True),
             base_url=cp.get("local_ai", "base_url", fallback="http://localhost:11434"),
-            model=cp.get("local_ai", "model", fallback="qwen2.5:7b-instruct"),
+            model=cp.get("local_ai", "model", fallback="qwen2.5:3b-instruct"),
             timeout=cp.getint("local_ai", "timeout", fallback=300),
         )
     if cp.has_section("evening_ai"):
