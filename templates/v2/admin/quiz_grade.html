@@ -8,6 +8,20 @@
 <p class="text-secondary">المغلقة مصحّحة آليّاً — راجعها وصادِق. المفتوحة: اكتب النقطة ثمّ صادِق.
   لا يدخل الحساب والتقارير (والذكاء الاصطناعي) إلّا جوابٌ <b>مصادَق عليه</b>.</p>
 
+{% if ai_msg %}<div class="alert alert-info">{{ ai_msg }}</div>{% endif %}
+
+<div class="card mb-3"><div class="card-body d-flex justify-content-between align-items-center flex-wrap">
+  <div>
+    <b>التصحيح المسائي المُعان (Ollama):</b>
+    <span class="text-secondary">يقترح المحرّك المحلّي نقط الأسئلة المفتوحة — اقتراحٌ لا حكم، تراجعه وتصادق.</span>
+  </div>
+  <form method="post" action="/admin/quizzes/{{ quiz.id }}/grade/ai"
+        onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='...جارٍ الاقتراح';">
+    <button class="btn btn-outline-primary" {% if not online %}disabled title="شغّل Ollama"{% endif %}>
+      اقتراح نقط المفتوحة بالذكاء الاصطناعي</button>
+  </form>
+</div></div>
+
 <form method="post" action="/admin/quizzes/{{ quiz.id }}/grade">
 {% for item in questions %}
   <div class="card mb-3">

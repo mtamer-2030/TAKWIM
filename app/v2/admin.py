@@ -17,6 +17,7 @@ from ..ai_feedback import (
     generate_class_plan,
     generate_student_plan,
     ollama_available,
+    suggest_open_score,
 )
 from ..database import AsyncSessionLocal
 from ..docx_import import parse_docx, parse_lines
@@ -608,7 +609,53 @@ async def quiz_grade_page(request: Request, quiz_id: int):
     questions = [{"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
                   "answers": by_q.get(q.id, [])} for q in quiz.questions]
     return templates.TemplateResponse(
-        "admin/quiz_grade.html", _ctx(request, quiz=quiz, questions=questions))
+        "admin/quiz_grade.html",
+        _ctx(request, quiz=quiz, questions=questions,
+             online=ollama_available(),
+             ai_msg=request.query_params.get("ai")))
+
+
+@router.post("/quizzes/{quiz_id}/grade/ai")
+async def quiz_grade_ai(request: Request, quiz_id: int):
+    """التصحيح المسائي المُعان: يقترح المحرّك المحلّي (Ollama) نقط الأسئلة المفتوحة.
+
+    اقتراحٌ لا حكم — يُملأ في حقول النقط ليراجعها الأستاذ ويصادق. تسلسليّاً،
+    وتدهور لطيف إن أُغلق المحرّك. المغلقة لا تُمسّ (مصحّحة يقينيّاً)."""
+    if (g := require_admin(request)):
+        return g
+    if not ollama_available():
+        return RedirectResponse(
+            f"/admin/quizzes/{quiz_id}/grade?ai=المحرّك المحلّي غير مشغّل — شغّل Ollama.",
+            status_code=303)
+    from sqlalchemy.orm import selectinload
+    suggested = 0
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id)
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("التقويم غير موجود", status_code=404)
+        open_qs = {q.id: q for q in quiz.questions
+                   if q.qtype not in QUESTION_TYPES_CLOSED}
+        if open_qs:
+            answers = (await s.execute(
+                select(QuizAnswer).where(QuizAnswer.question_id.in_(list(open_qs))))).scalars().all()
+            for ans in answers:
+                q = open_qs[ans.question_id]
+                answer_text = (ans.raw or {}).get("text", "") if isinstance(ans.raw, dict) else ""
+                guidance = "\n".join(
+                    f"- {i.get('text', '')} ({i.get('points', 0)} ن)"
+                    for i in (q.indicators or []))
+                try:
+                    score, _note = suggest_open_score(q.prompt, guidance, answer_text, q.max_score)
+                except AIUnavailable:
+                    break
+                ans.manual_score = score      # اقتراح؛ يبقى غير مصادَق حتى يراجعه الأستاذ
+                suggested += 1
+        await s.commit()
+    return RedirectResponse(
+        f"/admin/quizzes/{quiz_id}/grade?ai=اقتُرحت {suggested} نقطة للأسئلة المفتوحة — راجِعها وصادِق.",
+        status_code=303)
 
 
 @router.post("/quizzes/{quiz_id}/grade")

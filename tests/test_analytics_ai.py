@@ -142,3 +142,22 @@ def test_ollama_available_false_when_unreachable(monkeypatch):
         raise httpx.ConnectError("refused")
     monkeypatch.setattr("httpx.get", boom)
     assert ollama_available() is False
+
+
+def test_suggest_open_score_parses_and_caps(monkeypatch):
+    from app.ai_feedback import suggest_open_score
+
+    class FakeResp:
+        def __init__(self, txt): self._t = txt
+        def raise_for_status(self): pass
+        def json(self): return {"response": self._t}
+
+    monkeypatch.setattr("httpx.post",
+                        lambda *a, **k: FakeResp("النقطة: 2.5\nالتعليل: صاغ الإشكال بوضوح."))
+    score, note = suggest_open_score("صغ الإشكال", "- ذكر التوتّر (2 ن)", "هل الوعي شفّاف؟", 4)
+    assert score == 2.5 and "الإشكال" in note
+
+    # لا يتجاوز السقف مهما اقترح النموذج
+    monkeypatch.setattr("httpx.post", lambda *a, **k: FakeResp("النقطة: 99\nالتعليل: ممتاز"))
+    capped, _ = suggest_open_score("x", "", ".", 4)
+    assert capped == 4.0

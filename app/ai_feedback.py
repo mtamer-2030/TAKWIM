@@ -122,3 +122,50 @@ def generate_student_plan(profile: dict) -> str:
 def generate_class_plan(report: dict) -> str:
     """خطة دعم فصلي لقسم (نصّ). يرفع AIUnavailable إن كان المحرك مغلقاً."""
     return _generate(SYSTEM_CLASS, build_class_prompt(report))
+
+
+# ——————————————————— التصحيح المسائي المُعان (اقتراح لا حكم) ———————————————————
+
+SYSTEM_CORRECTION = (
+    "أنت أستاذ فلسفة مصحّح خبير بالمنهاج المغربي. اقترح نقطة لجواب التلميذ على "
+    "سؤال مفتوح، استناداً إلى عناصر الإجابة المعطاة، ثمّ سطرٌ واحد للتعليل. "
+    "اكتب سطرين فقط بهذه الصيغة حرفيّاً:\n"
+    "النقطة: <عدد بين 0 والسقف>\n"
+    "التعليل: <جملة قصيرة>\n"
+    "لا تتجاوز السقف، ولا تخترع عناصر غير واردة. هذا اقتراحٌ يراجعه الأستاذ."
+)
+
+
+def _build_correction_prompt(question_prompt: str, guidance: str,
+                             answer_text: str, max_score: float) -> str:
+    lines = [f"السؤال: {question_prompt}",
+             f"السقف: {max_score}",
+             f"عناصر الإجابة المنتظَرة:\n{guidance or '—'}",
+             f"جواب التلميذ:\n{answer_text or '(بلا جواب)'}",
+             "\nاقترح النقطة والتعليل بالصيغة المطلوبة."]
+    return "\n".join(lines)
+
+
+def suggest_open_score(question_prompt: str, guidance: str, answer_text: str,
+                       max_score: float) -> tuple[float, str]:
+    """يقترح (نقطة، تعليل) لجواب مفتوح عبر المحرك المحلّي. يرفع AIUnavailable إن أُغلق.
+
+    النقطة تُقصَر على [0, السقف]. التعليل سطرٌ واحد. اقتراحٌ لا حكم — يصادق الأستاذ.
+    """
+    import re
+    raw = _generate(SYSTEM_CORRECTION,
+                    _build_correction_prompt(question_prompt, guidance, answer_text, max_score))
+    score = 0.0
+    note = ""
+    for line in raw.splitlines():
+        s = line.strip()
+        if not note and ("التعليل" in s or "تعليل" in s):
+            note = s.split(":", 1)[-1].split("：", 1)[-1].strip()
+        m = re.search(r"[-+]?\d+(?:[.,]\d+)?", s)
+        if m and ("النقطة" in s or "نقطة" in s or score == 0.0):
+            try:
+                score = float(m.group().replace(",", "."))
+            except ValueError:
+                pass
+    score = max(0.0, min(float(max_score or 0), score))
+    return round(score, 2), (note or raw.strip()[:200])
