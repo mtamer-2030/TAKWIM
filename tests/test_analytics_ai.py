@@ -124,7 +124,8 @@ def test_ai_offline_graceful(monkeypatch):
     monkeypatch.setattr("httpx.post", boom)
     with pytest.raises(AIUnavailable) as exc:
         generate_student_plan({"skills": {}, "has_data": True, "student_name": "x"})
-    assert str(exc.value) == OFFLINE_MESSAGE
+    # لا 500؛ يُرفع AIUnavailable برسالة واضحة تدلّ على تعذّر الاتصال (تدهور لطيف).
+    assert "المحرّك المحلّي" in str(exc.value)
 
 
 def test_ai_success_mocked(monkeypatch):

@@ -118,9 +118,31 @@ def _generate(system_prompt: str, user_prompt: str) -> str:
         raise AIUnavailable(
             "المحرّك المحلّي بطيء (قد يُحمّل النموذج لأوّل مرّة). أعد المحاولة، "
             "أو زد المهلة في config.ini، أو استعمل نموذجاً أخفّ.") from e
+    except httpx.HTTPStatusError as e:
+        # المحرك يعمل لكنّه ردّ بخطأ — غالباً اسم النموذج غير مطابق (404).
+        body = ""
+        try:
+            body = e.response.text[:200]
+        except Exception:  # noqa: BLE001
+            pass
+        if e.response.status_code == 404:
+            raise AIUnavailable(
+                f"النموذج «{cfg.model}» غير موجود في Ollama. "
+                f"شغّل: ollama pull {cfg.model} — أو صحّح الاسم في config.ini "
+                f"(تحقّق بـ ollama list).") from e
+        raise AIUnavailable(f"ردّ المحرّك المحلّي بخطأ {e.response.status_code}: {body}") from e
     except Exception as e:
         # ConnectionRefused / ConnectError / أي خطأ اتصال ← تدهور لطيف
-        raise AIUnavailable(OFFLINE_MESSAGE) from e
+        raise AIUnavailable(f"تعذّر الاتصال بالمحرّك المحلّي: {type(e).__name__}") from e
+
+
+def ping_generate() -> tuple[bool, str]:
+    """اختبار سريع: يطلب توليداً قصيراً جداً ويعيد (نجاح، رسالة/نصّ) للتشخيص."""
+    try:
+        out = _generate("أجب بكلمة واحدة.", "قل: جاهز")
+        return True, out[:120]
+    except AIUnavailable as e:
+        return False, str(e)
 
 
 def generate_student_plan(profile: dict) -> str:

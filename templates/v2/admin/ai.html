@@ -12,6 +12,13 @@
   {% endif %}
 </div>
 
+<div class="mb-3">
+  <form method="post" action="/admin/ai/test" style="display:inline">
+    <button class="btn btn-outline-secondary btn-sm">اختبار المحرّك (توليد قصير)</button>
+  </form>
+  {% if test %}<span class="ms-2" style="font-family:monospace">{{ test }}</span>{% endif %}
+</div>
+
 {% if job_group %}
   <div class="card mb-3"><div class="card-body">
     <h3 class="card-title">جارٍ توليد التقارير — الفوج {{ job_group }}</h3>

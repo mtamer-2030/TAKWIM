@@ -17,6 +17,7 @@ from ..ai_feedback import (
     generate_class_plan,
     generate_student_plan,
     ollama_available,
+    ping_generate,
     suggest_open_score,
 )
 from ..database import AsyncSessionLocal
@@ -348,7 +349,19 @@ async def ai_page(request: Request):
     return templates.TemplateResponse(
         "admin/ai.html",
         _ctx(request, groups=groups, online=ollama_available(),
-             model=settings.local_ai.model, report_count=report_count, result=None))
+             model=settings.local_ai.model, report_count=report_count, result=None,
+             test=request.query_params.get("test")))
+
+
+@router.post("/ai/test")
+async def ai_test(request: Request):
+    """اختبار سريع للمحرّك المحلّي: توليد قصير يكشف الخطأ الحقيقي إن وُجد."""
+    if (g := require_admin(request)):
+        return g
+    import asyncio
+    ok, msg = await asyncio.to_thread(ping_generate)
+    prefix = "✓ المحرّك يعمل: " if ok else "✗ "
+    return RedirectResponse(f"/admin/ai?test={prefix}{msg}", status_code=303)
 
 
 # حالة مهامّ الذكاء الاصطناعي الجارية (في الذاكرة) — مفتاحها اسم الفوج.
