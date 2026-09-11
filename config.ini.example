@@ -20,15 +20,3 @@ base_url = http://localhost:11434
 ; ثبّت النموذج بـ: ollama pull qwen2.5:3b-instruct  (خفيف وسريع؛ 7b أثقل ويتطلّب ذاكرة كرت أكبر)
 model = qwen2.5:3b-instruct
 timeout = 300
-
-[evening_ai]
-; المساعدة المسائية وحدها — لا تُستدعى أثناء أي جلسة إطلاقاً.
-; اتركها فارغة لتعطيل المساعدة؛ يبقى النظام كاملاً بلا أي نقص.
-enabled = false
-provider = anthropic
-; مفتاح المزوّد — يبقى هنا فقط، لا في الكود ولا في القاعدة.
-api_key =
-model = claude-sonnet-4-5
-base_url = https://api.anthropic.com
-; حجم الدفعة عند المرور على الأجوبة المفتوحة
-batch_size = 10
