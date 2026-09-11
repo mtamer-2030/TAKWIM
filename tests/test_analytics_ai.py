@@ -18,6 +18,7 @@ from app.ai_feedback import (
     generate_student_plan,
     ollama_available,
 )
+from app.constants import SKILLS
 from app.models import (
     AnalysisQuestion,
     Base,
@@ -25,9 +26,9 @@ from app.models import (
     EventType,
     Level,
     PhilosophicalText,
+    Skill,
     Student,
     Submission,
-    TargetSkill,
     TextType,
 )
 from app.services.analytics import (
@@ -50,11 +51,14 @@ async def _seed():
         ax = Axis(module_id=m.id, title="نشأة الفلسفة"); s.add(ax); await s.flush()
         txt = PhilosophicalText(axis_id=ax.id, title="نص", content="…",
                                 text_type=TextType.BASIC); s.add(txt); await s.flush()
-        # أسئلة: الأشكلة (ضعيف)، الحجاج (قوي)
+        # المهارات الستّ الموحّدة مبذورة في جدول skills
+        skills = {name: Skill(name=name, position=i) for i, name in enumerate(SKILLS)}
+        s.add_all(list(skills.values())); await s.flush()
+        # أسئلة: صياغة الإشكال (ضعيف)، البنية الحجاجية (قوي)
         q_prob = AnalysisQuestion(text_id=txt.id, prompt="أشكل", max_score=4,
-                                  target_skill=TargetSkill.PROBLEM)
+                                  skill_id=skills["صياغة الإشكال"].id)
         q_arg = AnalysisQuestion(text_id=txt.id, prompt="حاجج", max_score=4,
-                                 target_skill=TargetSkill.ARGUMENT_STRUCTURE)
+                                 skill_id=skills["البنية الحجاجية"].id)
         s.add_all([q_prob, q_arg]); await s.flush()
         ev = EvaluationEvent(title="تشخيصي", event_type=EventType.DIAGNOSTIC)
         s.add(ev); await s.flush()
@@ -83,10 +87,10 @@ def test_student_skill_profile():
         return p
     p = asyncio.run(run())
     assert p["has_data"]
-    assert p["skills"]["إشكال"]["avg"] == 0.25
-    assert p["skills"]["بنية حجاجية"]["avg"] == pytest.approx(0.875)
-    assert p["critical_deficit"] == "إشكال"     # أضعف مهارة
-    assert p["strength"] == "بنية حجاجية"              # أقوى مهارة
+    assert p["skills"]["صياغة الإشكال"]["avg"] == 0.25
+    assert p["skills"]["البنية الحجاجية"]["avg"] == pytest.approx(0.875)
+    assert p["critical_deficit"] == "صياغة الإشكال"     # أضعف مهارة
+    assert p["strength"] == "البنية الحجاجية"            # أقوى مهارة
 
 
 def test_class_report_dominant_deficit():
@@ -98,22 +102,26 @@ def test_class_report_dominant_deficit():
         return r
     r = asyncio.run(run())
     assert r["has_data"] and r["student_count"] == 2
-    assert r["dominant_deficit"] == "إشكال"     # القصور المنهجي المهيمن
-    assert r["dominant_share"] == 1.0             # هو أضعف مهارة لدى الجميع
+    assert r["dominant_deficit"] == "صياغة الإشكال"   # القصور المنهجي المهيمن
+    assert r["dominant_share"] == 1.0                 # هو أضعف مهارة لدى الجميع
 
 
 # ————— الذكاء الاصطناعي: هندسة الأمر والتدهور اللطيف —————
 
 def test_prompts_are_arabic_and_contain_skills():
     profile = {"student_name": "تلميذ أ", "skills": {
-        "إشكال": {"avg": 0.25, "count": 2}, "مفاهيم": {"avg": None, "count": 0},
-        "بنية حجاجية": {"avg": 0.88, "count": 2}, "أطروحة": {"avg": None, "count": 0},
-        "استنتاج": {"avg": None, "count": 0}},
-        "strength": "بنية حجاجية", "critical_deficit": "إشكال", "overall": 0.56}
+        "صياغة الإشكال": {"avg": 0.25, "count": 2},
+        "البنية المفاهيمية": {"avg": None, "count": 0},
+        "البنية الحجاجية": {"avg": 0.88, "count": 2},
+        "الأطروحة": {"avg": None, "count": 0},
+        "المناقشة": {"avg": None, "count": 0},
+        "التركيب": {"avg": None, "count": 0}},
+        "strength": "البنية الحجاجية", "critical_deficit": "صياغة الإشكال",
+        "overall": 0.56}
     txt = build_student_prompt(profile)
-    assert "إشكال" in txt and "القصور الحرج" in txt and "٣ نقاط" in txt
+    assert "صياغة الإشكال" in txt and "القصور الحرج" in txt and "٣ نقاط" in txt
     creport = {"group_name": "TC1", "student_count": 2, "skills": profile["skills"],
-               "dominant_deficit": "إشكال", "dominant_share": 1.0, "overall": 0.56}
+               "dominant_deficit": "صياغة الإشكال", "dominant_share": 1.0, "overall": 0.56}
     assert "القصور المنهجي المهيمن" in build_class_prompt(creport)
 
 

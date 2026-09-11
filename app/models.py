@@ -53,12 +53,7 @@ class TextType(str, enum.Enum):
     SUPPORT = "داعم"
 
 
-class TargetSkill(str, enum.Enum):
-    PROBLEM = "إشكال"
-    CONCEPTS = "مفاهيم"
-    THESIS = "أطروحة"
-    ARGUMENT_STRUCTURE = "بنية حجاجية"
-    CONCLUSION = "استنتاج"
+# المهارات لم تعد Enum: صارت جدولاً مبذوراً (Skill) ليضيف الأستاذ مهارة دون هجرة.
 
 
 class MethodologyType(str, enum.Enum):
@@ -171,8 +166,21 @@ class PhilosophicalText(Base):
         back_populates="text", cascade="all, delete-orphan")
 
 
+class Skill(Base):
+    """المهارة المستهدَفة: جدول مبذور بالمهارات الستّ الموحّدة (بدل Enum).
+
+    مصدر واحد للحقيقة؛ يشير إليه سؤال التحليل وسؤال التقويم عبر skill_id.
+    """
+
+    __tablename__ = "skills"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class AnalysisQuestion(Base):
-    """سؤال تحليل نصّ: يستهدف مهارة محدّدة (إشكال/مفاهيم/أطروحة/بنية حجاجية/استنتاج)."""
+    """سؤال تحليل نصّ: يستهدف مهارة من جدول المهارات (skill_id)."""
 
     __tablename__ = "analysis_questions"
 
@@ -180,12 +188,14 @@ class AnalysisQuestion(Base):
     text_id: Mapped[int] = mapped_column(
         ForeignKey("philosophical_texts.id", ondelete="CASCADE"), index=True)
     prompt: Mapped[str] = mapped_column(Text)
-    target_skill: Mapped[TargetSkill] = mapped_column(_ar_enum(TargetSkill, "target_skill_enum"))
+    skill_id: Mapped[int | None] = mapped_column(
+        ForeignKey("skills.id", ondelete="SET NULL"), nullable=True, index=True)
     guidance: Mapped[str | None] = mapped_column(Text, nullable=True)  # عناصر الإجابة/توجيه
     max_score: Mapped[float] = mapped_column(Float, default=0)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     text: Mapped["PhilosophicalText"] = relationship(back_populates="questions")
+    skill: Mapped["Skill | None"] = relationship()
     submissions: Mapped[list["Submission"]] = relationship(back_populates="question")
 
 
@@ -367,7 +377,8 @@ class QuizQuestion(Base):
         ForeignKey("quizzes.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     qtype: Mapped[str] = mapped_column(String(20))     # mcq_single/mcq_multi/classify/order/short_text/long_text/grid
-    competency: Mapped[str | None] = mapped_column(String(30), nullable=True)  # كفاية v1
+    skill_id: Mapped[int | None] = mapped_column(
+        ForeignKey("skills.id", ondelete="SET NULL"), nullable=True, index=True)
     prompt: Mapped[str] = mapped_column(Text)
     stimulus: Mapped[str | None] = mapped_column(Text, nullable=True)  # نصّ انطلاق محلول
     payload: Mapped[dict] = mapped_column(JSON, default=dict)          # options/correct/items/diagnostics…
@@ -377,6 +388,7 @@ class QuizQuestion(Base):
     auto_scored: Mapped[bool] = mapped_column(default=False)
 
     quiz: Mapped["Quiz"] = relationship(back_populates="questions")
+    skill: Mapped["Skill | None"] = relationship()
     answers: Mapped[list["QuizAnswer"]] = relationship(
         back_populates="question", cascade="all, delete-orphan")
 
@@ -456,5 +468,6 @@ __all__ = [
     "AnalysisQuestion", "EssayExercise", "EvaluationEvent", "Student",
     "Submission", "StudentReport", "ClassReport",
     "Quiz", "QuizQuestion", "QuizAnswer", "QuizSession", "SessionStudent",
-    "TextType", "TargetSkill", "MethodologyType", "EventType",
+    "Skill",
+    "TextType", "MethodologyType", "EventType",
 ]

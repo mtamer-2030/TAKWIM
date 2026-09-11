@@ -60,6 +60,7 @@ from .web import (
     issue_admin_token,
     require_admin,
     revoke_admin_token,
+    skill_id_map,
     templates,
 )
 
@@ -602,8 +603,10 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         msg = " | ".join(errors) or "تعذّر تحويل الملفّ."
         return RedirectResponse(f"/admin/quizzes?error={msg}", status_code=303)
     lid = int(level_id) if level_id.strip().isdigit() else None
+    skills = await skill_id_map()
     async with AsyncSessionLocal() as s:
-        quiz = build_quiz(normalized, level_id=lid, group_name=group_name.strip() or None)
+        quiz = build_quiz(normalized, level_id=lid,
+                          group_name=group_name.strip() or None, skill_ids=skills)
         s.add(quiz)
         await s.commit()
         n = len(quiz.questions)

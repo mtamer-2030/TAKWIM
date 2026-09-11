@@ -1,38 +1,26 @@
 """طبقة التحليل الرياضي (المرحلة 5) — بروفايل مهارات التلميذ وتقرير القسم.
 
-المهارات المستهدَفة تأتي من AnalysisQuestion.target_skill:
-إشكال، مفاهيم، أطروحة، بنية حجاجية، استنتاج.
+المهارات المستهدَفة موحّدة عبر المستويات الثلاثة وتُقرأ من جدول skills عبر
+skill_id في سؤال التحليل (AnalysisQuestion) وسؤال التقويم (QuizQuestion):
+صياغة الإشكال، البنية المفاهيمية، الأطروحة، البنية الحجاجية، المناقشة، التركيب.
 النقطة تُطبَّع كنسبة score/max_score (0..1) قبل حساب المتوسّطات، فتُقارَن المهارات
 بعدل رغم اختلاف السلالم. لا يدخل الحساب إلّا إنجاز مصادَق عليه (teacher_confirmed).
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import func
-
+from ..constants import SKILLS
 from ..models import (
     AnalysisQuestion,
     QuizAnswer,
     QuizQuestion,
+    Skill,
     Student,
     Submission,
-    TargetSkill,
 )
-
-# كفاية v1 (competency في التقاويم بالأسئلة) ← مهارة v2 (قيمة عربية).
-COMPETENCY_TO_SKILL: dict[str, str] = {
-    "problematization": TargetSkill.PROBLEM.value,          # إشكال
-    "conceptualization": TargetSkill.CONCEPTS.value,        # مفاهيم
-    "argumentation": TargetSkill.ARGUMENT_STRUCTURE.value,  # بنية حجاجية
-    "synthesis": TargetSkill.CONCLUSION.value,              # استنتاج
-    "knowledge": TargetSkill.THESIS.value,                  # أطروحة
-}
-
-# ترتيب المهارات الخمس الثابت.
-SKILLS: list[str] = [s.value for s in TargetSkill]
 
 
 def _mean(values: list[float]) -> float | None:
@@ -42,10 +30,11 @@ def _mean(values: list[float]) -> float | None:
 async def _confirmed_ratios_by_skill(
     session: AsyncSession, student_ids: list[int] | None = None,
 ) -> dict[str, list[float]]:
-    """يجمع نِسب (score/max_score) المصادَق عليها، مصنّفة حسب مهارة السؤال."""
+    """يجمع نِسب (score/max_score) المصادَق عليها، مصنّفة حسب اسم مهارة السؤال."""
     stmt = (
-        select(AnalysisQuestion.target_skill, Submission.score, Submission.max_score)
+        select(Skill.name, Submission.score, Submission.max_score)
         .join(AnalysisQuestion, AnalysisQuestion.id == Submission.question_id)
+        .join(Skill, Skill.id == AnalysisQuestion.skill_id)
         .where(
             Submission.teacher_confirmed.is_(True),
             Submission.question_id.is_not(None),
@@ -58,15 +47,15 @@ async def _confirmed_ratios_by_skill(
         stmt = stmt.where(Submission.student_id.in_(student_ids))
 
     buckets: dict[str, list[float]] = {s: [] for s in SKILLS}
-    for skill, score, max_score in (await session.execute(stmt)).all():
-        key = skill.value if hasattr(skill, "value") else str(skill)
-        buckets.setdefault(key, []).append(max(0.0, min(1.0, score / max_score)))
+    for name, score, max_score in (await session.execute(stmt)).all():
+        buckets.setdefault(name, []).append(max(0.0, min(1.0, score / max_score)))
 
-    # + إنجازات التقاويم بالأسئلة المصادَق عليها (تُحوَّل كفايتها إلى مهارة v2).
+    # + إنجازات التقاويم بالأسئلة المصادَق عليها (تُصنَّف بنفس جدول المهارات).
     eff_score = func.coalesce(QuizAnswer.manual_score, QuizAnswer.auto_score)
     qstmt = (
-        select(QuizQuestion.competency, eff_score, QuizQuestion.max_score)
+        select(Skill.name, eff_score, QuizQuestion.max_score)
         .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+        .join(Skill, Skill.id == QuizQuestion.skill_id)
         .where(
             QuizAnswer.teacher_confirmed.is_(True),
             eff_score.is_not(None),
@@ -75,10 +64,9 @@ async def _confirmed_ratios_by_skill(
     )
     if student_ids is not None:
         qstmt = qstmt.where(QuizAnswer.student_id.in_(student_ids))
-    for competency, score, max_score in (await session.execute(qstmt)).all():
-        key = COMPETENCY_TO_SKILL.get(competency)
-        if key and score is not None:
-            buckets.setdefault(key, []).append(max(0.0, min(1.0, score / max_score)))
+    for name, score, max_score in (await session.execute(qstmt)).all():
+        if score is not None:
+            buckets.setdefault(name, []).append(max(0.0, min(1.0, score / max_score)))
     return buckets
 
 

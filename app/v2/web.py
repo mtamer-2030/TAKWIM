@@ -10,9 +10,9 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
-from ..constants import LEVELS  # {code: arabic_name} من v1 (نفس المستويات)
+from ..constants import LEVELS, SKILLS  # {code: arabic_name} + المهارات الستّ الموحّدة
 from ..database import AsyncSessionLocal
-from ..models import Level
+from ..models import Level, Skill
 from ..settings import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -81,3 +81,20 @@ async def seed_levels() -> None:
                 s.add(Level(code=code, name=name, position=pos))
             pos += 1
         await s.commit()
+
+
+async def seed_skills() -> None:
+    """يبذر المهارات الستّ الموحّدة في جدول skills إن لم تكن موجودة."""
+    async with AsyncSessionLocal() as s:
+        existing = {r for (r,) in (await s.execute(select(Skill.name))).all()}
+        for pos, name in enumerate(SKILLS):
+            if name not in existing:
+                s.add(Skill(name=name, position=pos))
+        await s.commit()
+
+
+async def skill_id_map() -> dict[str, int]:
+    """خريطة (اسم المهارة → id) من جدول skills المبذور — لحلّ skill_id عند الاستيراد."""
+    async with AsyncSessionLocal() as s:
+        rows = (await s.execute(select(Skill.name, Skill.id))).all()
+    return {name: sid for name, sid in rows}

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from ..constants import QUESTION_TYPES_CLOSED
+from ..constants import COMPETENCY_TO_SKILL, QUESTION_TYPES_CLOSED, SKILLS
 from ..models import Quiz, QuizQuestion
 from ..scoring import answer_text, score_answer
 from ..validation import validate_assessment
@@ -31,9 +31,27 @@ def normalize_quiz_json(data) -> dict:
     return result.normalized
 
 
+def resolve_skill_id(value: str | None, skill_ids: dict[str, int]) -> int | None:
+    """يحلّ قيمة الكفاية/المهارة إلى skill_id من خريطة (اسم المهارة → id).
+
+    يقبل مفتاح كفاية v1 (مثل ``argumentation``) أو اسم مهارة عربيّاً مباشرةً.
+    يعيد None إن تعذّر التطابق (فيبقى السؤال بلا مهارة، لا ينهار الاستيراد).
+    """
+    if not value:
+        return None
+    name = value if value in SKILLS else COMPETENCY_TO_SKILL.get(value)
+    return skill_ids.get(name) if name else None
+
+
 def build_quiz(normalized: dict, *, level_id: int | None = None,
-               group_name: str | None = None) -> Quiz:
-    """يبني كائن Quiz (غير محفوظ) من الصيغة المطبّعة، مع حلّ نصوص الانطلاق."""
+               group_name: str | None = None,
+               skill_ids: dict[str, int] | None = None) -> Quiz:
+    """يبني كائن Quiz (غير محفوظ) من الصيغة المطبّعة، مع حلّ نصوص الانطلاق.
+
+    ``skill_ids``: خريطة (اسم المهارة العربيّ → id) من جدول skills المبذور،
+    تُحلّ بها كفاية كل سؤال إلى skill_id؛ إن غابت بقيت الأسئلة بلا مهارة.
+    """
+    skill_ids = skill_ids or {}
     stim_by_id = {s["id"]: s["text"] for s in normalized.get("stimuli", [])}
     quiz = Quiz(
         title=normalized["title"],
@@ -47,7 +65,7 @@ def build_quiz(normalized: dict, *, level_id: int | None = None,
         quiz.questions.append(QuizQuestion(
             position=q.get("position", 0),
             qtype=q["type"],
-            competency=q.get("competency"),
+            skill_id=resolve_skill_id(q.get("competency"), skill_ids),
             prompt=q["prompt"],
             stimulus=stim_by_id.get(q.get("stimulus")) if q.get("stimulus") else None,
             payload=q.get("payload") or {},

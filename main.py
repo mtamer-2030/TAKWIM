@@ -25,7 +25,7 @@ from app.netinfo import lan_url
 from app.settings import settings
 from app.v2 import admin as v2_admin
 from app.v2 import student as v2_student
-from app.v2.web import seed_levels
+from app.v2.web import seed_levels, seed_skills
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -59,6 +59,7 @@ async def lifespan(_app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await seed_levels()          # يبذر المستويات الثلاثة إن غابت
+    await seed_skills()          # يبذر المهارات الستّ الموحّدة إن غابت
     _print_access_banner()       # يطبع العناوين الصحيحة تلقائياً في نافذة التشغيل
     yield
     await engine.dispose()

@@ -39,6 +39,27 @@ COMPETENCIES: dict[str, str] = {
     "knowledge": "الاستحضار",
 }
 
+# ——— المهارات الستّ الموحّدة عبر المستويات الثلاثة (قرار الأستاذ، شتنبر 2026) ———
+# مصدر واحد للحقيقة؛ تُبذَر في جدول skills عند الإقلاع (ROADMAP §٢-١، ١-ج).
+SKILLS: list[str] = [
+    "صياغة الإشكال",
+    "البنية المفاهيمية",
+    "الأطروحة",
+    "البنية الحجاجية",
+    "المناقشة",
+    "التركيب",
+]
+
+# توافق مع الملفّات القديمة: مفاتيح كفايات v1 (competency) ← اسم المهارة الجديد.
+# «المناقشة» مهارة جديدة بلا مفتاح v1 مقابل — تُدخَل عبر الاسم مباشرةً.
+COMPETENCY_TO_SKILL: dict[str, str] = {
+    "problematization": "صياغة الإشكال",
+    "conceptualization": "البنية المفاهيمية",
+    "argumentation": "البنية الحجاجية",
+    "synthesis": "التركيب",
+    "knowledge": "الأطروحة",
+}
+
 QUESTION_TYPES_CLOSED = ("mcq_single", "mcq_multi", "classify", "order")
 QUESTION_TYPES_OPEN = ("short_text", "grid", "long_text")
 QUESTION_TYPES = QUESTION_TYPES_CLOSED + QUESTION_TYPES_OPEN

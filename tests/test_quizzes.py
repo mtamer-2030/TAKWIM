@@ -46,6 +46,22 @@ def test_normalize_and_build_quiz():
     assert q0.auto_scored is True
 
 
+def test_build_quiz_resolves_skill_id_from_map():
+    # خريطة (اسم المهارة → id) كما تأتي من جدول skills المبذور.
+    skill_ids = {"صياغة الإشكال": 1, "البنية المفاهيمية": 2, "البنية الحجاجية": 4}
+    quiz = build_quiz(normalize_quiz_json(SAMPLE), skill_ids=skill_ids)
+    # conceptualization → البنية المفاهيمية (2)، argumentation → البنية الحجاجية (4)،
+    # problematization → صياغة الإشكال (1).
+    assert quiz.questions[0].skill_id == 2
+    assert quiz.questions[1].skill_id == 4
+    assert quiz.questions[2].skill_id == 1
+
+
+def test_build_quiz_without_map_leaves_skill_none():
+    quiz = build_quiz(normalize_quiz_json(SAMPLE))
+    assert all(q.skill_id is None for q in quiz.questions)
+
+
 def test_invalid_json_raises_with_errors():
     bad = {"title": "x", "kind": "لا_يوجد", "questions": []}
     with pytest.raises(QuizImportError) as exc:
