@@ -1,6 +1,7 @@
 {% extends "student/base.html" %}
 {% block title %}{{ quiz.title }} · PHILO-TECH{% endblock %}
 {% block body %}
+{% set saved = saved or {} %}
 <div class="pt-shell">
   <div class="pt-header">
     <span class="brand">PHILO-TECH</span>
@@ -8,8 +9,9 @@
   </div>
   <div class="pt-main">
     <h3 style="margin:.2rem 0 1rem">{{ quiz.title }}</h3>
-    <form method="post" action="/student/quiz/{{ quiz.id }}/submit">
+    <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
     {% for q in quiz.questions %}
+      {% set a = saved.get(q.id) or {} %}
       <div class="pt-card" style="margin-bottom:1rem">
         <div style="font-weight:700;margin-bottom:.5rem">{{ loop.index }}. {{ q.prompt }}
           <span class="muted" style="font-weight:400;font-size:.8rem">({{ q.max_score }} ن)</span>
@@ -24,31 +26,38 @@
         {% if q.qtype == 'mcq_single' %}
           {% for opt in q.payload.options %}
             <label style="display:block;padding:.35rem 0">
-              <input type="radio" name="q_{{ q.id }}" value="{{ loop.index0 }}"> {{ opt }}
+              <input type="radio" name="q_{{ q.id }}" value="{{ loop.index0 }}"
+                     {% if a.get('choice') == loop.index0 %}checked{% endif %}> {{ opt }}
             </label>
           {% endfor %}
 
         {% elif q.qtype == 'mcq_multi' %}
+          {% set chosen = a.get('choices') or [] %}
           {% for opt in q.payload.options %}
             <label style="display:block;padding:.35rem 0">
-              <input type="checkbox" name="q_{{ q.id }}" value="{{ loop.index0 }}"> {{ opt }}
+              <input type="checkbox" name="q_{{ q.id }}" value="{{ loop.index0 }}"
+                     {% if loop.index0 in chosen %}checked{% endif %}> {{ opt }}
             </label>
           {% endfor %}
 
         {% elif q.qtype == 'classify' %}
+          {% set assigns = a.get('assignments') or [] %}
           {% for item in q.payload['items'] %}
+            {% set item_idx = loop.index0 %}
             <div style="display:flex;gap:.5rem;align-items:center;padding:.3rem 0">
               <span style="flex:1">{{ item.text }}</span>
-              <select name="q_{{ q.id }}_item_{{ loop.index0 }}">
+              <select name="q_{{ q.id }}_item_{{ item_idx }}">
                 <option value="">— اختر —</option>
                 {% for cat in q.payload.categories %}
-                  <option value="{{ loop.index0 }}">{{ cat }}</option>
+                  <option value="{{ loop.index0 }}"
+                    {% if item_idx < assigns|length and assigns[item_idx] == loop.index0 %}selected{% endif %}>{{ cat }}</option>
                 {% endfor %}
               </select>
             </div>
           {% endfor %}
 
         {% elif q.qtype == 'order' %}
+          {% set order = a.get('order') or [] %}
           <div class="muted" style="font-size:.85rem;margin-bottom:.3rem">اختر لكلّ مرتبة العنصرَ المناسب:</div>
           {% for k in range(q.payload['items']|length) %}
             <div style="display:flex;gap:.5rem;align-items:center;padding:.3rem 0">
@@ -56,7 +65,8 @@
               <select name="q_{{ q.id }}_slot_{{ k }}" style="flex:1">
                 <option value="">— اختر —</option>
                 {% for it in q.payload['items'] %}
-                  <option value="{{ loop.index0 }}">{{ it }}</option>
+                  <option value="{{ loop.index0 }}"
+                    {% if k < order|length and order[k] == loop.index0 %}selected{% endif %}>{{ it }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -64,6 +74,7 @@
 
         {% elif q.qtype == 'short_text' %}
           <input type="text" name="q_{{ q.id }}_text" style="width:100%;padding:.5rem"
+                 value="{{ a.get('text') or '' }}"
                  {% if q.payload.max_chars %}maxlength="{{ q.payload.max_chars }}"{% endif %}>
 
         {% elif q.qtype == 'long_text' %}
@@ -72,16 +83,18 @@
               {{ q.payload.scaffold|join(' · ') }}</div>
           {% endif %}
           <textarea name="q_{{ q.id }}_text" rows="5" style="width:100%;padding:.5rem"
-                    {% if q.payload.max_chars %}maxlength="{{ q.payload.max_chars }}"{% endif %}></textarea>
+                    {% if q.payload.max_chars %}maxlength="{{ q.payload.max_chars }}"{% endif %}>{{ a.get('text') or '' }}</textarea>
 
         {% elif q.qtype == 'grid' %}
+          {% set cells = a.get('cells') or [] %}
           <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">
             <thead><tr>{% for c in q.payload.columns %}<th style="border:1px solid #ddd;padding:.3rem">{{ c }}</th>{% endfor %}</tr></thead>
             <tbody>
             {% for ri in range(q.payload.rows) %}
               <tr>{% for ci in range(q.payload.columns|length) %}
                 <td style="border:1px solid #ddd;padding:.2rem">
-                  <input type="text" name="q_{{ q.id }}_c_{{ ri }}_{{ ci }}" style="width:100%;padding:.3rem">
+                  <input type="text" name="q_{{ q.id }}_c_{{ ri }}_{{ ci }}" style="width:100%;padding:.3rem"
+                         value="{{ cells[ri][ci] if (ri < cells|length and ci < cells[ri]|length) else '' }}">
                 </td>{% endfor %}</tr>
             {% endfor %}
             </tbody>
@@ -89,10 +102,34 @@
         {% endif %}
       </div>
     {% endfor %}
+      <div id="saveStatus" class="muted" style="font-size:.8rem;text-align:center;min-height:1.1rem;margin-bottom:.4rem"></div>
       <button type="submit" style="width:100%;padding:.8rem;background:#0d47a1;color:#fff;border:none;border-radius:.5rem;font-size:1rem">
         تسليم التقويم
       </button>
     </form>
   </div>
 </div>
+
+<script>
+// حفظ تدريجيّ (ح-٦): يخزّن المسوّدة كلّما تغيّر إدخال (مُمهَل) وكلّ 20ث، بلا مكتبات.
+// لا يمسّ التسليم النهائيّ؛ إن انقطعت الشبكة يبقى ما حُفظ ويُستأنَف عند إعادة الفتح.
+(function () {
+  var form = document.getElementById('quizForm');
+  var status = document.getElementById('saveStatus');
+  if (!form) return;
+  var timer = null, submitting = false;
+  form.addEventListener('submit', function () { submitting = true; });
+  function save() {
+    if (submitting) return;
+    fetch('/student/quiz/{{ quiz.id }}/save', { method: 'POST', body: new FormData(form) })
+      .then(function (r) { return r.status === 200 ? r.text() : ''; })
+      .then(function (t) { if (t) status.textContent = t; })
+      .catch(function () { status.textContent = '⚠ تعذّر الحفظ — سنعيد المحاولة'; });
+  }
+  function schedule() { clearTimeout(timer); timer = setTimeout(save, 1500); }
+  form.addEventListener('input', schedule);
+  form.addEventListener('change', schedule);
+  setInterval(save, 20000);
+})();
+</script>
 {% endblock %}

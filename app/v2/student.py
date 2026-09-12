@@ -231,8 +231,15 @@ async def take_quiz(request: Request, quiz_id: int):
             return HTMLResponse(
                 _blocked("لا تقويم مفتوح الآن. سيفتحه الأستاذ في حينه."), status_code=403)
 
+        # استئناف (ح-٦): مسوّدات محفوظة سابقاً تُملأ في النموذج.
+        qids = [q.id for q in quiz.questions]
+        rows = (await s.execute(select(Answer).where(
+            Answer.student_id == student.id,
+            Answer.quiz_question_id.in_(qids)))).scalars().all() if qids else []
+        saved = {a.quiz_question_id: (a.raw or {}) for a in rows}
+
         resp = templates.TemplateResponse(
-            "student/quiz.html", _ctx(request, quiz=quiz, student=student))
+            "student/quiz.html", _ctx(request, quiz=quiz, student=student, saved=saved))
     if set_token:
         resp.set_cookie(DEVICE_COOKIE, set_token, httponly=True, samesite="lax")
     return resp
@@ -336,6 +343,45 @@ async def submit_quiz(request: Request, quiz_id: int):
     return templates.TemplateResponse(
         "student/quiz_result.html",
         _ctx(request, quiz_title=quiz.title, feedback=feedback, reveal=reveal))
+
+
+@router.post("/quiz/{quiz_id}/save")
+async def save_quiz_draft(request: Request, quiz_id: int):
+    """حفظ تدريجيّ (ح-٦): يخزّن أجوبة التلميذ مسوّدةً كلّما تغيّرت، بلا تصحيح ولا
+    مصادقة، فلا يضيع عمله إن انقطعت الشبكة. لا يمسّ التقارير (غير مصادَق). يُستأنَف
+    عند إعادة فتح التقويم. لا يُحفَظ بعد التسليم النهائيّ."""
+    student = await _load_student(request)
+    if student is None:
+        return HTMLResponse("", status_code=401)
+    form = await request.form()
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id)
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("", status_code=404)
+        # الإتاحة نفسها كالتسليم، لكن بلا نهائيّة: جلسة مفتوحة (حاضر لم يسلّم) أو منزليّ.
+        sess, part = await _open_session_for(s, student, quiz_id)
+        if sess is not None:
+            if part is None or not part.present or part.submitted_at is not None:
+                return HTMLResponse("", status_code=204)
+        elif not homework_available_to(quiz, student):
+            return HTMLResponse("", status_code=204)
+
+        for q in quiz.questions:
+            raw = _raw_from_form(q, form)
+            existing = await s.scalar(select(Answer).where(
+                Answer.quiz_question_id == q.id, Answer.student_id == student.id))
+            if existing:
+                # لا نلمس جواباً مصادَقاً عليه (احتياط)؛ المسوّدة تبقى مسوّدة.
+                if not existing.teacher_confirmed:
+                    existing.raw = raw
+            else:
+                s.add(Answer(quiz_question_id=q.id, student_id=student.id,
+                             raw=raw, auto_score=None, teacher_confirmed=False))
+        await s.commit()
+    from datetime import datetime
+    return HTMLResponse(f'حُفظ ✓ {datetime.now().strftime("%H:%M")}')
 
 
 _SKILL_BANDS = [
