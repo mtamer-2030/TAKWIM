@@ -596,6 +596,10 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         msg = " | ".join(errors) or "تعذّر تحويل الملفّ."
         return RedirectResponse(f"/admin/quizzes?error={msg}", status_code=303)
     lid = int(level_id) if level_id.strip().isdigit() else None
+    if lid is None:
+        # ح-٢: لا يُحفَظ تقويم بلا مستوى (لئلّا يُنشَر لاحقاً فيتسرّب لكلّ المستويات).
+        return RedirectResponse(
+            "/admin/quizzes?error=اختر المستوى قبل الاستيراد.", status_code=303)
     skills = await skill_id_map()
     async with AsyncSessionLocal() as s:
         quiz = build_quiz(normalized, level_id=lid,
@@ -617,10 +621,16 @@ async def quiz_assign(request: Request, quiz_id: int, level_id: str = Form(""),
     async with AsyncSessionLocal() as s:
         quiz = await s.get(Quiz, quiz_id)
         if quiz:
-            quiz.level_id = int(level_id) if level_id.strip().isdigit() else None
+            lid = int(level_id) if level_id.strip().isdigit() else None
+            quiz.level_id = lid
             quiz.group_name = group_name.strip() or None
-            quiz.published = (published == "on")
+            # ح-٢: لا نشر لتقويم بلا مستوى (يمنع التسريب لكلّ المستويات).
+            quiz.published = (published == "on") and lid is not None
             await s.commit()
+            if published == "on" and lid is None:
+                return RedirectResponse(
+                    "/admin/quizzes?error=لا يمكن نشر تقويم بلا مستوى — اختر المستوى أوّلاً.",
+                    status_code=303)
     return RedirectResponse("/admin/quizzes", status_code=303)
 
 

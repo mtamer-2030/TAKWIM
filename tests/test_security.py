@@ -54,6 +54,28 @@ def test_password_hash_comparison(monkeypatch):
     assert web.check_admin_password("") is False
 
 
+def test_homework_available_to_enforces_level_and_group():
+    """ح-٢: التحقّق داخل الأخذ/التسليم — لا يُتاح تقويم لمستوى/فوج غير التلميذ."""
+    from app.v2.student import homework_available_to
+    st = SimpleNamespace(level_id=1, group_name="TC1")
+
+    # منشور ويطابق المستوى والفوج → متاح.
+    assert homework_available_to(
+        SimpleNamespace(published=True, level_id=1, group_name="TC1"), st) is True
+    # غير منشور → غير متاح.
+    assert homework_available_to(
+        SimpleNamespace(published=False, level_id=1, group_name="TC1"), st) is False
+    # مستوى آخر → غير متاح (كان يتسرّب حين يُفحَص العرض فقط).
+    assert homework_available_to(
+        SimpleNamespace(published=True, level_id=2, group_name="TC1"), st) is False
+    # فوج آخر → غير متاح.
+    assert homework_available_to(
+        SimpleNamespace(published=True, level_id=1, group_name="TC2"), st) is False
+    # منشور عامّ (بلا مستوى/فوج) → متاح للكلّ (لكنّ النشر بلا مستوى ممنوع أصلاً).
+    assert homework_available_to(
+        SimpleNamespace(published=True, level_id=None, group_name=None), st) is True
+
+
 def test_login_backoff_grows_then_resets():
     web.record_login_result(True)             # صفّر أوّلاً
     assert web.next_login_delay() == 0.0

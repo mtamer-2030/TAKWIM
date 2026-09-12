@@ -137,6 +137,18 @@ def _homework_visible_to(student: Student):
     )
 
 
+def homework_available_to(quiz: Quiz, student: Student) -> bool:
+    """ح-٢: يتحقّق من إتاحة تقويم منزليّ لهذا التلميذ داخل الأخذ/التسليم نفسه،
+    لا في شرط العرض فقط — منشور + يطابق مستواه/فوجه (أو عامّ)."""
+    if not quiz.published:
+        return False
+    if quiz.level_id is not None and quiz.level_id != student.level_id:
+        return False
+    if quiz.group_name is not None and quiz.group_name != student.group_name:
+        return False
+    return True
+
+
 DEVICE_COOKIE = "pt_device"
 
 
@@ -214,8 +226,8 @@ async def take_quiz(request: Request, quiz_id: int):
                 return HTMLResponse(
                     _blocked("هذا التقويم مقفل على جهاز آخر. اطلب من الأستاذ فكّ القفل."),
                     status_code=403)
-        elif not quiz.published:
-            # لا جلسة مفتوحة ولا منشور
+        elif not homework_available_to(quiz, student):
+            # لا جلسة مفتوحة، ولا هو منشورٌ متاحٌ لمستوى/فوج هذا التلميذ (ح-٢).
             return HTMLResponse(
                 _blocked("لا تقويم مفتوح الآن. سيفتحه الأستاذ في حينه."), status_code=403)
 
@@ -283,7 +295,12 @@ async def submit_quiz(request: Request, quiz_id: int):
         if sess is not None:
             if part is None or not part.present:
                 return HTMLResponse(_blocked("لست مسجّلاً في هذه الجلسة."), status_code=403)
-        elif not quiz.published:
+            # ح-٥: رفض التسليم مرّتين — بعد التسليم لا يُعاد إلّا بفكّ الأستاذ للقفل.
+            if part.submitted_at is not None:
+                return HTMLResponse(
+                    _blocked("لقد سلّمت هذا التقويم. لا يمكن التسليم مرّة أخرى."),
+                    status_code=403)
+        elif not homework_available_to(quiz, student):
             return HTMLResponse(_blocked("انتهت الجلسة أو أُغلقت."), status_code=403)
 
         results = []

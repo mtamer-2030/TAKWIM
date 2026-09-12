@@ -300,7 +300,8 @@ class Quiz(Base):
     unit: Mapped[str | None] = mapped_column(String(200), nullable=True)
     concept: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reveal_feedback: Mapped[bool] = mapped_column(default=True)  # عرض التغذية الراجعة للمغلقة
-    published: Mapped[bool] = mapped_column(default=True)        # مرئيّ للتلاميذ
+    # ح-٢: الافتراض غير منشور — لا يُعرض للتلاميذ إلّا بنشر صريح من الأستاذ بعد إسناد مستوى.
+    published: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     questions: Mapped[list["QuizQuestion"]] = relationship(
