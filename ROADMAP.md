@@ -437,7 +437,7 @@ tests/: test_scoring · test_codes · test_normalize · test_docx · test_valida
 | ١-ج المهارات الستّ | ✅ منجَز | 2026-09-11 | 857d87b |
 | ١-د تنظيف constants | ✅ منجَز (KIND_LABELS + DIAGNOSTIC_SEED؛ COMPETENCIES/KINDS يبقيان — يستعملهما validation) | 2026-09-12 | 69aed43 |
 | ٢-أ نسخ احتياطي | ✅ منجَز (integrity_check + تدوير ١٤ي + نسخة عند إغلاق الجلسة + زرّ /admin + USB؛ اختبار استرجاع ٤٥ جواباً) | 2026-09-12 | 4f0474d |
-| ٢-ب Alembic حصراً | لم يبدأ | | |
+| ٢-ب Alembic حصراً | ✅ منجَز (حُذف create_all؛ db_bootstrap يبني/يهاجر/يتبنّى القديمة بوسم مستنتَج؛ downgrade -1/upgrade head يمرّان) | 2026-09-12 | 5177f52 |
 | ٣-أ … ٣-هـ الأمن | لم يبدأ | | |
 | ٤-أ … ٤-د الحمولة | لم يبدأ | | |
 | ٥-أ … ٥-د الإتمام | لم يبدأ | | |

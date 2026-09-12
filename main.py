@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 
 from app.database import DB_PATH, engine
-from app.models import Base
+from app.db_bootstrap import ensure_head
 from app.netinfo import lan_url
 from app.settings import settings
 from app.v2 import admin as v2_admin
@@ -53,11 +54,10 @@ def _print_access_banner() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    # ينشئ الجداول الغائبة فقط (آمن وغير هدّام): يضمن ظهور جداول جديدة (مثل
-    # التقاويم) على قواعد قائمة دون إلزام المستخدم بتشغيل Alembic يدوياً.
-    # create_all لا يحذف ولا يعدّل جدولاً موجوداً، إنّما يُنشئ الغائب فقط.
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Alembic مصدرُ الحقيقة الوحيد للمخطّط (البند ٢-ب): يبني قاعدة جديدة من الصفر،
+    # ويُهاجر القائمة إلى head، ويتبنّى قاعدة قديمة بُنيت بـ create_all بوسمها ثمّ
+    # ترقيتها — بلا انحراف مخطّط ولا create_all. يُشغَّل في خيط لأنّ Alembic متزامن.
+    await asyncio.to_thread(ensure_head)
     await seed_levels()          # يبذر المستويات الثلاثة إن غابت
     await seed_skills()          # يبذر المهارات الستّ الموحّدة إن غابت
     _print_access_banner()       # يطبع العناوين الصحيحة تلقائياً في نافذة التشغيل
