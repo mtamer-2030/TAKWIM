@@ -86,8 +86,11 @@ def ollama_available() -> bool:
         return False
 
 
-def _generate(system_prompt: str, user_prompt: str) -> str:
-    """نداء Ollama /api/generate. يرفع AIUnavailable عند أي تعذّر اتصال/مهلة."""
+def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None) -> str:
+    """نداء Ollama /api/generate. يرفع AIUnavailable عند أي تعذّر اتصال/مهلة.
+
+    fmt="json" يقيّد المخرَج بمخطّط JSON (بدل تفكيكه بـ regex) — للتصحيح المُعان.
+    """
     cfg = settings.local_ai
     if not cfg.enabled:
         raise AIUnavailable(OFFLINE_MESSAGE)
@@ -95,17 +98,16 @@ def _generate(system_prompt: str, user_prompt: str) -> str:
         import httpx
     except ImportError as e:  # pragma: no cover
         raise AIUnavailable(OFFLINE_MESSAGE) from e
+    payload = {"model": cfg.model, "system": system_prompt,
+               "prompt": user_prompt, "stream": False,
+               # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
+               # ويحدّ طول المخرَج فتقلّ مدّة التوليد على المعالج.
+               "keep_alive": "30m",
+               "options": {"num_predict": 350, "temperature": 0.3}}
+    if fmt:
+        payload["format"] = fmt   # "json" → مخرَج JSON صالح مضمون من Ollama
     try:
-        resp = httpx.post(
-            f"{cfg.base_url}/api/generate",
-            json={"model": cfg.model, "system": system_prompt,
-                  "prompt": user_prompt, "stream": False,
-                  # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
-                  # ويحدّ طول المخرَج فتقلّ مدّة التوليد على المعالج.
-                  "keep_alive": "30m",
-                  "options": {"num_predict": 350, "temperature": 0.3}},
-            timeout=cfg.timeout,
-        )
+        resp = httpx.post(f"{cfg.base_url}/api/generate", json=payload, timeout=cfg.timeout)
         resp.raise_for_status()
         data = resp.json()
         text = (data.get("response") or "").strip()
@@ -160,10 +162,8 @@ def generate_class_plan(report: dict) -> str:
 
 SYSTEM_CORRECTION = (
     "أنت أستاذ فلسفة مصحّح خبير بالمنهاج المغربي. اقترح نقطة لجواب التلميذ على "
-    "سؤال مفتوح، استناداً إلى عناصر الإجابة المعطاة، ثمّ سطرٌ واحد للتعليل. "
-    "اكتب سطرين فقط بهذه الصيغة حرفيّاً:\n"
-    "النقطة: <عدد بين 0 والسقف>\n"
-    "التعليل: <جملة قصيرة>\n"
+    "سؤال مفتوح، استناداً إلى عناصر الإجابة المعطاة، مع تعليل من جملة قصيرة. "
+    "أعِد JSON فقط بهذا الشكل: {\"score\": <عدد بين 0 والسقف>, \"note\": \"<جملة قصيرة>\"}. "
     "لا تتجاوز السقف، ولا تخترع عناصر غير واردة. هذا اقتراحٌ يراجعه الأستاذ."
 )
 
@@ -183,21 +183,27 @@ def suggest_open_score(question_prompt: str, guidance: str, answer_text: str,
     """يقترح (نقطة، تعليل) لجواب مفتوح عبر المحرك المحلّي. يرفع AIUnavailable إن أُغلق.
 
     النقطة تُقصَر على [0, السقف]. التعليل سطرٌ واحد. اقتراحٌ لا حكم — يصادق الأستاذ.
+    المخرَج مقيَّد بمخطّط JSON (لا تفكيك regex هشّ يخلط سقفاً بنقطة).
     """
-    import re
+    import json
     raw = _generate(SYSTEM_CORRECTION,
-                    _build_correction_prompt(question_prompt, guidance, answer_text, max_score))
-    score = 0.0
-    note = ""
-    for line in raw.splitlines():
-        s = line.strip()
-        if not note and ("التعليل" in s or "تعليل" in s):
-            note = s.split(":", 1)[-1].split("：", 1)[-1].strip()
-        m = re.search(r"[-+]?\d+(?:[.,]\d+)?", s)
-        if m and ("النقطة" in s or "نقطة" in s or score == 0.0):
+                    _build_correction_prompt(question_prompt, guidance, answer_text, max_score),
+                    fmt="json")
+    score, note = 0.0, ""
+    try:
+        data = json.loads(raw)
+        raw_score = data.get("score")
+        score = float(raw_score) if raw_score is not None else 0.0
+        note = str(data.get("note") or "").strip()
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        # مخرَج غير متوقّع رغم طلب JSON: رجوعٌ آمن إلى أوّل رقم في النصّ.
+        import re
+        m = re.search(r"[-+]?\d+(?:[.,]\d+)?", raw or "")
+        if m:
             try:
                 score = float(m.group().replace(",", "."))
             except ValueError:
-                pass
+                score = 0.0
+        note = (raw or "").strip()[:200]
     score = max(0.0, min(float(max_score or 0), score))
-    return round(score, 2), (note or raw.strip()[:200])
+    return round(score, 2), (note or (raw or "").strip()[:200])

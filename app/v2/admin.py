@@ -486,6 +486,18 @@ async def ai_run(request: Request, group_name: str = Form(...),
             _ctx(request, groups=groups, online=ollama_available(),
                  model=settings.local_ai.model, report_count=None, **extra))
 
+    # ق-٢ (فرض برمجيّ): لا يشتغل الذكاء الاصطناعي وأيّ جلسة صفّية مفتوحة — كل
+    # معالجة ذكية بعد إغلاق الحصّة، لا أثناءها (حفاظاً على العتاد واليقين).
+    async with AsyncSessionLocal() as s:
+        open_sess = await s.scalar(
+            select(func.count()).select_from(QuizSession)
+            .where(QuizSession.status == "open"))
+    if open_sess:
+        return await render(result={
+            "offline": False,
+            "message": "توجد جلسة صفّية مفتوحة. أغلِق الجلسات أوّلاً — "
+                       "المعالجة الذكية تكون بعد الحصّة لا أثناءها (ق-٢)."})
+
     if not ollama_available():
         return await render(result={"offline": True,
                                     "message": "محرك الذكاء الاصطناعي غير مشغل. "

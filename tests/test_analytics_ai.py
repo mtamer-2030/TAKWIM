@@ -208,12 +208,18 @@ def test_suggest_open_score_parses_and_caps(monkeypatch):
         def raise_for_status(self): pass
         def json(self): return {"response": self._t}
 
+    # المخرَج مقيَّد بـ JSON (المسار الأساسي).
     monkeypatch.setattr("httpx.post",
-                        lambda *a, **k: FakeResp("النقطة: 2.5\nالتعليل: صاغ الإشكال بوضوح."))
+                        lambda *a, **k: FakeResp('{"score": 2.5, "note": "صاغ الإشكال بوضوح."}'))
     score, note = suggest_open_score("صغ الإشكال", "- ذكر التوتّر (2 ن)", "هل الوعي شفّاف؟", 4)
     assert score == 2.5 and "الإشكال" in note
 
     # لا يتجاوز السقف مهما اقترح النموذج
-    monkeypatch.setattr("httpx.post", lambda *a, **k: FakeResp("النقطة: 99\nالتعليل: ممتاز"))
+    monkeypatch.setattr("httpx.post", lambda *a, **k: FakeResp('{"score": 99, "note": "ممتاز"}'))
     capped, _ = suggest_open_score("x", "", ".", 4)
     assert capped == 4.0
+
+    # رجوع آمن إن لم يكن المخرَج JSON صالحاً: يُلتقَط أوّل رقم بلا انهيار.
+    monkeypatch.setattr("httpx.post", lambda *a, **k: FakeResp("النقطة 3 من 4"))
+    fb, _ = suggest_open_score("x", "", ".", 4)
+    assert fb == 3.0
