@@ -15,11 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..constants import SKILLS
 from ..models import (
     AnalysisQuestion,
-    QuizAnswer,
+    Answer,
     QuizQuestion,
     Skill,
     Student,
-    Submission,
 )
 
 
@@ -30,43 +29,39 @@ def _mean(values: list[float]) -> float | None:
 async def _confirmed_ratios_by_skill(
     session: AsyncSession, student_ids: list[int] | None = None,
 ) -> dict[str, list[float]]:
-    """يجمع نِسب (score/max_score) المصادَق عليها، مصنّفة حسب اسم مهارة السؤال."""
-    stmt = (
-        select(Skill.name, Submission.score, Submission.max_score)
-        .join(AnalysisQuestion, AnalysisQuestion.id == Submission.question_id)
-        .join(Skill, Skill.id == AnalysisQuestion.skill_id)
-        .where(
-            Submission.teacher_confirmed.is_(True),
-            Submission.question_id.is_not(None),
-            Submission.score.is_not(None),
-            Submission.max_score.is_not(None),
-            Submission.max_score > 0,
-        )
-    )
-    if student_ids is not None:
-        stmt = stmt.where(Submission.student_id.in_(student_ids))
+    """يجمع نِسب (score/max_score) المصادَق عليها من جدول الأجوبة الموحّد.
 
+    النقطة الفعلية = يدوية الأستاذ إن وُجدت وإلّا الآلية. تُصنَّف الأجوبة حسب اسم
+    مهارة السؤال (سؤال تقويم أو سؤال تحليل نصّ)؛ الأجوبة الإنشائية بلا مهارة
+    لا تدخل الرادار. لا يُحتسب إلّا جواب مصادَق عليه (teacher_confirmed).
+    """
+    eff = func.coalesce(Answer.manual_score, Answer.auto_score)
     buckets: dict[str, list[float]] = {s: [] for s in SKILLS}
-    for name, score, max_score in (await session.execute(stmt)).all():
-        buckets.setdefault(name, []).append(max(0.0, min(1.0, score / max_score)))
 
-    # + إنجازات التقاويم بالأسئلة المصادَق عليها (تُصنَّف بنفس جدول المهارات).
-    eff_score = func.coalesce(QuizAnswer.manual_score, QuizAnswer.auto_score)
+    # (1) أجوبة أسئلة التقويم → مهارة السؤال + سقفه.
     qstmt = (
-        select(Skill.name, eff_score, QuizQuestion.max_score)
-        .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+        select(Skill.name, eff, QuizQuestion.max_score)
+        .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
         .join(Skill, Skill.id == QuizQuestion.skill_id)
-        .where(
-            QuizAnswer.teacher_confirmed.is_(True),
-            eff_score.is_not(None),
-            QuizQuestion.max_score > 0,
-        )
+        .where(Answer.teacher_confirmed.is_(True), eff.is_not(None),
+               QuizQuestion.max_score > 0)
+    )
+    # (2) أجوبة أسئلة تحليل النصّ → مهارة السؤال + سقفه.
+    astmt = (
+        select(Skill.name, eff, AnalysisQuestion.max_score)
+        .join(AnalysisQuestion, AnalysisQuestion.id == Answer.analysis_question_id)
+        .join(Skill, Skill.id == AnalysisQuestion.skill_id)
+        .where(Answer.teacher_confirmed.is_(True), eff.is_not(None),
+               AnalysisQuestion.max_score > 0)
     )
     if student_ids is not None:
-        qstmt = qstmt.where(QuizAnswer.student_id.in_(student_ids))
-    for name, score, max_score in (await session.execute(qstmt)).all():
-        if score is not None:
-            buckets.setdefault(name, []).append(max(0.0, min(1.0, score / max_score)))
+        qstmt = qstmt.where(Answer.student_id.in_(student_ids))
+        astmt = astmt.where(Answer.student_id.in_(student_ids))
+
+    for stmt in (qstmt, astmt):
+        for name, score, max_score in (await session.execute(stmt)).all():
+            if score is not None and max_score:
+                buckets.setdefault(name, []).append(max(0.0, min(1.0, score / max_score)))
     return buckets
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Quiz, QuizAnswer, QuizQuestion, Student
+from ..models import Answer, Quiz, QuizQuestion, Student
 from .analytics import generate_student_skill_profile
 
 
@@ -24,18 +24,18 @@ def _pct(score: float | None, maxs: float | None) -> float | None:
 
 async def _quiz_score_rows(session: AsyncSession, student_ids: list[int] | None):
     """صفوف (quiz_id, title, kind, created_at, student_id, score, maxs) المصادَق عليها."""
-    eff = func.coalesce(QuizAnswer.manual_score, QuizAnswer.auto_score)
+    eff = func.coalesce(Answer.manual_score, Answer.auto_score)
     stmt = (
         select(Quiz.id, Quiz.title, Quiz.kind, Quiz.created_at,
-               QuizAnswer.student_id, func.sum(eff), func.sum(QuizQuestion.max_score))
-        .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+               Answer.student_id, func.sum(eff), func.sum(QuizQuestion.max_score))
+        .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
         .join(Quiz, Quiz.id == QuizQuestion.quiz_id)
-        .where(QuizAnswer.teacher_confirmed.is_(True),
+        .where(Answer.teacher_confirmed.is_(True),
                eff.is_not(None), QuizQuestion.max_score > 0)
-        .group_by(Quiz.id, QuizAnswer.student_id)
+        .group_by(Quiz.id, Answer.student_id)
     )
     if student_ids is not None:
-        stmt = stmt.where(QuizAnswer.student_id.in_(student_ids))
+        stmt = stmt.where(Answer.student_id.in_(student_ids))
     return (await session.execute(stmt)).all()
 
 

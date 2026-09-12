@@ -21,14 +21,12 @@ from app.ai_feedback import (
 from app.constants import SKILLS
 from app.models import (
     AnalysisQuestion,
+    Answer,
     Base,
-    EvaluationEvent,
-    EventType,
     Level,
     PhilosophicalText,
     Skill,
     Student,
-    Submission,
     TextType,
 )
 from app.services.analytics import (
@@ -54,26 +52,28 @@ async def _seed():
         # المهارات الستّ الموحّدة مبذورة في جدول skills
         skills = {name: Skill(name=name, position=i) for i, name in enumerate(SKILLS)}
         s.add_all(list(skills.values())); await s.flush()
-        # أسئلة: صياغة الإشكال (ضعيف)، البنية الحجاجية (قوي)
+        # أسئلة تحليل نصّ: صياغة الإشكال (ضعيف)، البنية الحجاجية (قوي).
+        # السقف من AnalysisQuestion.max_score؛ النقطة الفعلية من الجواب الموحّد.
         q_prob = AnalysisQuestion(text_id=txt.id, prompt="أشكل", max_score=4,
                                   skill_id=skills["صياغة الإشكال"].id)
         q_arg = AnalysisQuestion(text_id=txt.id, prompt="حاجج", max_score=4,
                                  skill_id=skills["البنية الحجاجية"].id)
-        s.add_all([q_prob, q_arg]); await s.flush()
-        ev = EvaluationEvent(title="تشخيصي", event_type=EventType.DIAGNOSTIC)
-        s.add(ev); await s.flush()
+        # سؤال ثانٍ من مهارة «صياغة الإشكال» لجواب غير مصادَق (يجب ألّا يُحتسب).
+        q_prob2 = AnalysisQuestion(text_id=txt.id, prompt="أشكل ٢", max_score=4,
+                                   skill_id=skills["صياغة الإشكال"].id)
+        s.add_all([q_prob, q_arg, q_prob2]); await s.flush()
         s1 = Student(full_name="تلميذ أ", level_id=lvl.id, group_name="TC1", massar_code="A")
         s2 = Student(full_name="تلميذ ب", level_id=lvl.id, group_name="TC1", massar_code="B")
         s.add_all([s1, s2]); await s.flush()
-        # الأشكلة ضعيفة (1/4=25%)، الحجاج قوية (3.5/4≈88%)، مصادَق عليها
+        # صياغة الإشكال ضعيفة (1/4=25%)، البنية الحجاجية قوية (3.5/4≈88%)، مصادَق عليها
         for st in (s1, s2):
-            s.add(Submission(student_id=st.id, event_id=ev.id, question_id=q_prob.id,
-                             score=1, max_score=4, teacher_confirmed=True))
-            s.add(Submission(student_id=st.id, event_id=ev.id, question_id=q_arg.id,
-                             score=3.5, max_score=4, teacher_confirmed=True))
-        # إنجاز غير مصادَق لا يُحتسب
-        s.add(Submission(student_id=s1.id, event_id=ev.id, question_id=q_prob.id,
-                         score=4, max_score=4, teacher_confirmed=False))
+            s.add(Answer(student_id=st.id, analysis_question_id=q_prob.id,
+                         auto_score=1, teacher_confirmed=True))
+            s.add(Answer(student_id=st.id, analysis_question_id=q_arg.id,
+                         auto_score=3.5, teacher_confirmed=True))
+        # جواب غير مصادَق (على سؤال آخر من المهارة نفسها) لا يُحتسب — لا يرفع المتوسّط
+        s.add(Answer(student_id=s1.id, analysis_question_id=q_prob2.id,
+                     auto_score=4, teacher_confirmed=False))
         await s.commit()
         return eng, Session, s1.id
 
@@ -91,6 +91,53 @@ def test_student_skill_profile():
     assert p["skills"]["البنية الحجاجية"]["avg"] == pytest.approx(0.875)
     assert p["critical_deficit"] == "صياغة الإشكال"     # أضعف مهارة
     assert p["strength"] == "البنية الحجاجية"            # أقوى مهارة
+
+
+def test_unified_answer_table_mixes_quiz_and_analysis(tmp_path=None):
+    """معيار ١-ب: الجواب على سؤال تقويم وسؤال تحليل نصّ يدخلان الجدول الموحّد نفسه
+    (answers) ويظهران معاً في ملفّ مهارات التلميذ — لا مساران منفصلان."""
+    from app.models import Quiz, QuizQuestion
+
+    async def run():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(eng, expire_on_commit=False)
+        async with Session() as s:
+            from app.models import Axis, Module
+            lvl = Level(name="الجذع المشترك", code="TC"); s.add(lvl); await s.flush()
+            m = Module(level_id=lvl.id, title="ف"); s.add(m); await s.flush()
+            ax = Axis(module_id=m.id, title="م"); s.add(ax); await s.flush()
+            txt = PhilosophicalText(axis_id=ax.id, title="ن", content="…",
+                                    text_type=TextType.BASIC); s.add(txt); await s.flush()
+            skills = {n: Skill(name=n, position=i) for i, n in enumerate(SKILLS)}
+            s.add_all(list(skills.values())); await s.flush()
+            st = Student(full_name="ت", level_id=lvl.id, group_name="TC1", massar_code="Z")
+            s.add(st); await s.flush()
+            # (أ) جواب على سؤال تقويم (مهارة: البنية المفاهيمية)
+            quiz = Quiz(title="ق", kind="exercise"); s.add(quiz); await s.flush()
+            qq = QuizQuestion(quiz_id=quiz.id, qtype="mcq_single", prompt="س",
+                              skill_id=skills["البنية المفاهيمية"].id, max_score=4, position=0)
+            s.add(qq); await s.flush()
+            # (ب) جواب على سؤال تحليل نصّ (مهارة: التركيب)
+            aq = AnalysisQuestion(text_id=txt.id, prompt="ركّب", max_score=4,
+                                  skill_id=skills["التركيب"].id)
+            s.add(aq); await s.flush()
+            s.add(Answer(student_id=st.id, quiz_question_id=qq.id,
+                         auto_score=2, teacher_confirmed=True))       # 2/4 = 50%
+            s.add(Answer(student_id=st.id, analysis_question_id=aq.id,
+                         auto_score=3, teacher_confirmed=True))       # 3/4 = 75%
+            await s.commit()
+            p = await generate_student_skill_profile(s, st.id)
+        await eng.dispose()
+        return p
+
+    p = asyncio.run(run())
+    # كلا الجوابين — من نوعين مختلفين — دخلا الجدول الموحّد وظهرا في الملفّ.
+    assert p["skills"]["البنية المفاهيمية"]["avg"] == 0.5
+    assert p["skills"]["التركيب"]["avg"] == 0.75
+    assert p["critical_deficit"] == "البنية المفاهيمية"
+    assert p["strength"] == "التركيب"
 
 
 def test_class_report_dominant_deficit():

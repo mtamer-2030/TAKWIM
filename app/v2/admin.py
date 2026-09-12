@@ -24,22 +24,20 @@ from ..database import AsyncSessionLocal
 from ..docx_import import parse_docx, parse_lines
 from ..importer import ImporterError, extract_text, parse_students_excel
 from ..models import (
+    Answer,
     Axis,
     ClassReport,
     Concept,
     EssayExercise,
-    EvaluationEvent,
     Level,
     Module,
     PhilosophicalText,
     Quiz,
-    QuizAnswer,
     QuizQuestion,
     QuizSession,
     SessionStudent,
     Student,
     StudentReport,
-    Submission,
     TextType,
 )
 from ..netinfo import lan_url
@@ -116,7 +114,7 @@ async def dashboard(request: Request):
             "students": await s.scalar(select(func.count()).select_from(Student)),
             "texts": await s.scalar(select(func.count()).select_from(PhilosophicalText)),
             "essays": await s.scalar(select(func.count()).select_from(EssayExercise)),
-            "submissions": await s.scalar(select(func.count()).select_from(Submission)),
+            "submissions": await s.scalar(select(func.count()).select_from(Answer)),
         }
         # توزيع التلاميذ حسب المستوى (لرسم Chart.js تجريبي)
         rows = (await s.execute(
@@ -512,34 +510,6 @@ async def delete_text(request: Request, text_id: int):
     return RedirectResponse("/admin/texts", status_code=303)
 
 
-# ═══════════════ التقاويم (سياقات التقويم) ═══════════════
-
-
-@router.get("/events", response_class=HTMLResponse)
-async def events(request: Request):
-    """لائحة التقاويم مع عدد الإنجازات المرتبطة بكلّ تقويم، وإمكان الحذف."""
-    if (g := require_admin(request)):
-        return g
-    async with AsyncSessionLocal() as s:
-        rows = (await s.execute(
-            select(EvaluationEvent, func.count(Submission.id))
-            .join(Submission, Submission.event_id == EvaluationEvent.id, isouter=True)
-            .group_by(EvaluationEvent.id)
-            .order_by(EvaluationEvent.created_at.desc()))).all()
-    return templates.TemplateResponse("admin/events.html", _ctx(request, rows=rows))
-
-
-@router.post("/events/{event_id}/delete")
-async def delete_event(request: Request, event_id: int):
-    """حذف تقويم وكلّ إنجازاته بالتتالي (ON DELETE CASCADE)."""
-    if (g := require_admin(request)):
-        return g
-    async with AsyncSessionLocal() as s:
-        await s.execute(sa_delete(EvaluationEvent).where(EvaluationEvent.id == event_id))
-        await s.commit()
-    return RedirectResponse("/admin/events", status_code=303)
-
-
 # ═══════════════ التقاويم بالأسئلة (استيراد JSON/Word/PDF → أسئلة مغلقة/مفتوحة) ═══════════════
 
 
@@ -659,15 +629,15 @@ async def quiz_grade_page(request: Request, quiz_id: int):
         if quiz is None:
             return HTMLResponse("التقويم غير موجود", status_code=404)
         rows = (await s.execute(
-            select(QuizAnswer, Student)
-            .join(Student, Student.id == QuizAnswer.student_id)
-            .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+            select(Answer, Student)
+            .join(Student, Student.id == Answer.student_id)
+            .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
             .where(QuizQuestion.quiz_id == quiz_id)
             .order_by(QuizQuestion.position, Student.full_name))).all()
     # تجميع الأجوبة حسب السؤال، مع نصّ مقروء وحالة الإغلاق.
     by_q: dict[int, list] = {}
     for ans, student in rows:
-        q = next((qq for qq in quiz.questions if qq.id == ans.question_id), None)
+        q = next((qq for qq in quiz.questions if qq.id == ans.quiz_question_id), None)
         if q is None:
             continue
         by_q.setdefault(q.id, []).append({
@@ -708,9 +678,9 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
                    if q.qtype not in QUESTION_TYPES_CLOSED}
         if open_qs:
             answers = (await s.execute(
-                select(QuizAnswer).where(QuizAnswer.question_id.in_(list(open_qs))))).scalars().all()
+                select(Answer).where(Answer.quiz_question_id.in_(list(open_qs))))).scalars().all()
             for ans in answers:
-                q = open_qs[ans.question_id]
+                q = open_qs[ans.quiz_question_id]
                 answer_text = (ans.raw or {}).get("text", "") if isinstance(ans.raw, dict) else ""
                 guidance = "\n".join(
                     f"- {i.get('text', '')} ({i.get('points', 0)} ن)"
@@ -735,8 +705,8 @@ async def quiz_grade_save(request: Request, quiz_id: int):
     form = await request.form()
     async with AsyncSessionLocal() as s:
         answers = (await s.execute(
-            select(QuizAnswer)
-            .join(QuizQuestion, QuizQuestion.id == QuizAnswer.question_id)
+            select(Answer)
+            .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
             .where(QuizQuestion.quiz_id == quiz_id))).scalars().all()
         for ans in answers:
             raw_score = form.get(f"score_{ans.id}")

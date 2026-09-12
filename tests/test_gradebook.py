@@ -3,7 +3,7 @@ import asyncio
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.models import (Base, Level, Quiz, QuizQuestion, QuizAnswer, Skill, Student)
+from app.models import (Answer, Base, Level, Quiz, QuizQuestion, Skill, Student)
 from app.services.gradebook import class_gradebook, student_gradebook
 
 
@@ -24,8 +24,8 @@ async def _seed():
                               skill_id=sk.id, max_score=4, position=0)
             s.add(qq); await s.flush()
             score = 2 if i == 0 else 4     # تحسّن: 50٪ ثمّ 100٪
-            s.add(QuizAnswer(question_id=qq.id, student_id=st.id, auto_score=score,
-                             teacher_confirmed=True))
+            s.add(Answer(quiz_question_id=qq.id, student_id=st.id, auto_score=score,
+                         teacher_confirmed=True))
         await s.commit()
         return eng, S, st.id
 

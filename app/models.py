@@ -19,11 +19,13 @@ from sqlalchemy import (
     Enum as SAEnum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     func,
+    text as sa_text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -86,7 +88,6 @@ class Level(Base):
         back_populates="level", cascade="all, delete-orphan")
     essays: Mapped[list["EssayExercise"]] = relationship(back_populates="level")
     students: Mapped[list["Student"]] = relationship(back_populates="level")
-    events: Mapped[list["EvaluationEvent"]] = relationship(back_populates="level")
 
 
 class Module(Base):
@@ -196,7 +197,8 @@ class AnalysisQuestion(Base):
 
     text: Mapped["PhilosophicalText"] = relationship(back_populates="questions")
     skill: Mapped["Skill | None"] = relationship()
-    submissions: Mapped[list["Submission"]] = relationship(back_populates="question")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="analysis_question", cascade="all, delete-orphan")
 
 
 class EssayExercise(Base):
@@ -216,28 +218,11 @@ class EssayExercise(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     level: Mapped["Level"] = relationship(back_populates="essays")
-    submissions: Mapped[list["Submission"]] = relationship(back_populates="essay")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="essay", cascade="all, delete-orphan")
 
 
 # ═══════════════════════ التقويم والتتبّع ═══════════════════════
-
-
-class EvaluationEvent(Base):
-    """سياق التقويم: تشخيصي / تمرين / فرض. قد يخصّ مستوى وفوجاً محدّدين."""
-
-    __tablename__ = "evaluation_events"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(String(300))
-    event_type: Mapped[EventType] = mapped_column(_ar_enum(EventType, "event_type_enum"))
-    level_id: Mapped[int | None] = mapped_column(
-        ForeignKey("levels.id", ondelete="SET NULL"), nullable=True, index=True)
-    group_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    level: Mapped["Level | None"] = relationship(back_populates="events")
-    submissions: Mapped[list["Submission"]] = relationship(
-        back_populates="event", cascade="all, delete-orphan")
 
 
 class Student(Base):
@@ -256,49 +241,10 @@ class Student(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     level: Mapped["Level"] = relationship(back_populates="students")
-    submissions: Mapped[list["Submission"]] = relationship(
+    answers: Mapped[list["Answer"]] = relationship(
         back_populates="student", cascade="all, delete-orphan")
     reports: Mapped[list["StudentReport"]] = relationship(
         back_populates="student", cascade="all, delete-orphan")
-
-
-class Submission(Base):
-    """إنجاز التلميذ: مرتبط بالتلميذ وبسياق التقويم، وبسؤال تحليل أو تمرين إنشاء.
-
-    قيد: لا يجوز أن يشير الإنجاز إلى سؤال وتمرين معاً (أحدهما على الأكثر).
-    skill_deficits: القصور المرصود (JSON) — يغذّي التقارير وخطط التدخّل.
-    """
-
-    __tablename__ = "submissions"
-    __table_args__ = (
-        CheckConstraint(
-            "NOT (question_id IS NOT NULL AND essay_id IS NOT NULL)",
-            name="ck_submission_single_target"),
-        UniqueConstraint("event_id", "student_id", "question_id", "essay_id",
-                         name="uq_submission_scope"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    student_id: Mapped[int] = mapped_column(
-        ForeignKey("students.id", ondelete="CASCADE"), index=True)
-    event_id: Mapped[int] = mapped_column(
-        ForeignKey("evaluation_events.id", ondelete="CASCADE"), index=True)
-    question_id: Mapped[int | None] = mapped_column(
-        ForeignKey("analysis_questions.id", ondelete="SET NULL"), nullable=True, index=True)
-    essay_id: Mapped[int | None] = mapped_column(
-        ForeignKey("essay_exercises.id", ondelete="SET NULL"), nullable=True, index=True)
-
-    answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)  # جواب التلميذ الخام
-    score: Mapped[float | None] = mapped_column(Float, nullable=True)     # النقطة
-    max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    skill_deficits: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # القصور المرصود
-    teacher_confirmed: Mapped[bool] = mapped_column(default=False)
-    submitted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    student: Mapped["Student"] = relationship(back_populates="submissions")
-    event: Mapped["EvaluationEvent"] = relationship(back_populates="submissions")
-    question: Mapped["AnalysisQuestion | None"] = relationship(back_populates="submissions")
-    essay: Mapped["EssayExercise | None"] = relationship(back_populates="submissions")
 
 
 class StudentReport(Base):
@@ -309,8 +255,6 @@ class StudentReport(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     student_id: Mapped[int] = mapped_column(
         ForeignKey("students.id", ondelete="CASCADE"), index=True)
-    event_id: Mapped[int | None] = mapped_column(
-        ForeignKey("evaluation_events.id", ondelete="SET NULL"), nullable=True, index=True)
     skill_profile: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # متوسّط كل مهارة
     ai_intervention_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -328,8 +272,6 @@ class ClassReport(Base):
     level_id: Mapped[int] = mapped_column(
         ForeignKey("levels.id", ondelete="CASCADE"), index=True)
     group_name: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
-    event_id: Mapped[int | None] = mapped_column(
-        ForeignKey("evaluation_events.id", ondelete="SET NULL"), nullable=True, index=True)
     skills_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # متوسّطات المهارات
     weakest_skill: Mapped[str | None] = mapped_column(String(60), nullable=True)
     ai_intervention_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -389,31 +331,60 @@ class QuizQuestion(Base):
 
     quiz: Mapped["Quiz"] = relationship(back_populates="questions")
     skill: Mapped["Skill | None"] = relationship()
-    answers: Mapped[list["QuizAnswer"]] = relationship(
-        back_populates="question", cascade="all, delete-orphan")
+    answers: Mapped[list["Answer"]] = relationship(
+        back_populates="quiz_question", cascade="all, delete-orphan")
 
 
-class QuizAnswer(Base):
-    """جواب تلميذ على سؤال تقويم: خام + نقطة يقينية (تلقائية) + نقطة الأستاذ."""
+class Answer(Base):
+    """جواب تلميذ موحّد على أيّ نوع سؤال (متعدّد الأشكال) — الجدول الوحيد للإنجاز.
 
-    __tablename__ = "quiz_answers"
+    يشير إلى هدف واحد بالضبط من ثلاثة: سؤال تقويم (quiz_question)، أو سؤال تحليل
+    نصّ (analysis_question)، أو تمرين إنشاء (essay). بذلك تدخل كلّ الأجوبة —
+    المغلقة والمفتوحة والإنشائية — المسارَ نفسه، وتراها التقارير وتحليل المهارات.
+
+    raw: جواب التلميذ الخام (JSON). النصّ الحرّ يُخزَّن {"text": ...}.
+    auto_score: النقطة اليقينية الآلية. manual_score: نقطة الأستاذ (تَجُبّ الآلية).
+    skill_deficits: القصور المرصود (JSON) — يغذّي التقارير وخطط التدخّل.
+    """
+
+    __tablename__ = "answers"
     __table_args__ = (
-        UniqueConstraint("question_id", "student_id", name="uq_quiz_answer"),
+        # هدف واحد بالضبط غير فارغ من الثلاثة.
+        CheckConstraint(
+            "((quiz_question_id IS NOT NULL) + (analysis_question_id IS NOT NULL) "
+            "+ (essay_id IS NOT NULL)) = 1",
+            name="ck_answer_single_target"),
+        # فرادة الجواب لكلّ (تلميذ، هدف): فهارس جزئية لأنّ SQLite يعدّ NULL متمايزة،
+        # فقيدٌ واحد على الأعمدة الأربعة لن يمنع تكرار الجواب على السؤال نفسه.
+        Index("uq_answer_quiz", "student_id", "quiz_question_id", unique=True,
+              sqlite_where=sa_text("quiz_question_id IS NOT NULL")),
+        Index("uq_answer_analysis", "student_id", "analysis_question_id", unique=True,
+              sqlite_where=sa_text("analysis_question_id IS NOT NULL")),
+        Index("uq_answer_essay", "student_id", "essay_id", unique=True,
+              sqlite_where=sa_text("essay_id IS NOT NULL")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    question_id: Mapped[int] = mapped_column(
-        ForeignKey("quiz_questions.id", ondelete="CASCADE"), index=True)
     student_id: Mapped[int] = mapped_column(
         ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    quiz_question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quiz_questions.id", ondelete="CASCADE"), nullable=True, index=True)
+    analysis_question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analysis_questions.id", ondelete="CASCADE"), nullable=True, index=True)
+    essay_id: Mapped[int | None] = mapped_column(
+        ForeignKey("essay_exercises.id", ondelete="CASCADE"), nullable=True, index=True)
+
     raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)      # جواب التلميذ الخام
     auto_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     manual_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    skill_deficits: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # القصور المرصود
     teacher_confirmed: Mapped[bool] = mapped_column(default=False)
     submitted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    question: Mapped["QuizQuestion"] = relationship(back_populates="answers")
-    student: Mapped["Student"] = relationship()
+    student: Mapped["Student"] = relationship(back_populates="answers")
+    quiz_question: Mapped["QuizQuestion | None"] = relationship(back_populates="answers")
+    analysis_question: Mapped["AnalysisQuestion | None"] = relationship(back_populates="answers")
+    essay: Mapped["EssayExercise | None"] = relationship(back_populates="answers")
 
 
 # ═══════════════════════ الجلسات الصفّية (فتح/إغلاق + حضور + قفل جهاز) ═══════════════════════
@@ -465,9 +436,9 @@ class SessionStudent(Base):
 # للاستيراد المريح في Alembic: كلّ الجداول عبر Base.metadata
 __all__ = [
     "Base", "Level", "Module", "Concept", "Axis", "PhilosophicalText",
-    "AnalysisQuestion", "EssayExercise", "EvaluationEvent", "Student",
-    "Submission", "StudentReport", "ClassReport",
-    "Quiz", "QuizQuestion", "QuizAnswer", "QuizSession", "SessionStudent",
+    "AnalysisQuestion", "EssayExercise", "Student",
+    "Answer", "StudentReport", "ClassReport",
+    "Quiz", "QuizQuestion", "QuizSession", "SessionStudent",
     "Skill",
     "TextType", "MethodologyType", "EventType",
 ]

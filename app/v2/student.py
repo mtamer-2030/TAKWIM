@@ -19,7 +19,7 @@ from ..models import (
     Module,
     PhilosophicalText,
     Quiz,
-    QuizAnswer,
+    Answer,
     QuizQuestion,
     QuizSession,
     SessionStudent,
@@ -173,8 +173,8 @@ async def tab_assessments(request: Request):
             .order_by(Quiz.created_at.desc()))).scalars().all()
         done = set((await s.execute(
             select(QuizQuestion.quiz_id)
-            .join(QuizAnswer, QuizAnswer.question_id == QuizQuestion.id)
-            .where(QuizAnswer.student_id == student.id).distinct())).scalars().all())
+            .join(Answer, Answer.quiz_question_id == QuizQuestion.id)
+            .where(Answer.student_id == student.id).distinct())).scalars().all())
     session_ids = {q.id for q in session_rows}
     homework = [q for q in homework if q.id not in session_ids]   # لا تكرار
     return templates.TemplateResponse(
@@ -293,16 +293,16 @@ async def submit_quiz(request: Request, quiz_id: int):
             # المفتوحة تبقى غير مصادَقة حتى يراجعها الأستاذ في شاشة التصحيح.
             auto_confirm = q.qtype in QUESTION_TYPES_CLOSED
             # حفظ/تحديث الجواب (فريد لكلّ سؤال+تلميذ)
-            existing = await s.scalar(select(QuizAnswer).where(
-                QuizAnswer.question_id == q.id, QuizAnswer.student_id == student.id))
+            existing = await s.scalar(select(Answer).where(
+                Answer.quiz_question_id == q.id, Answer.student_id == student.id))
             if existing:
                 existing.raw = raw
                 existing.auto_score = graded["score"]
                 existing.teacher_confirmed = auto_confirm
             else:
-                s.add(QuizAnswer(question_id=q.id, student_id=student.id,
-                                 raw=raw, auto_score=graded["score"],
-                                 teacher_confirmed=auto_confirm))
+                s.add(Answer(quiz_question_id=q.id, student_id=student.id,
+                             raw=raw, auto_score=graded["score"],
+                             teacher_confirmed=auto_confirm))
             results.append({"q": q, "graded": graded})
         # تعليم التسليم في الجلسة (للمتابعة الآنية)
         if sess is not None and part is not None:
