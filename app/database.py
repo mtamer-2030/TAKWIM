@@ -22,7 +22,13 @@ DB_PATH = DATA_DIR / "philotech.db"
 
 DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+# مجمّع اتّصالات صريح موسَّع للحمولة المستهدَفة (٤٥ متعلّماً + مراقبة الأستاذ):
+# WAL يتيح قرّاءً متزامنين، والكتابة تتسلسل (busy_timeout أدناه يمتصّ التنازع).
+# الافتراض (٥+١٠=١٥) أضيق من ٤٥؛ نرفعه إلى ٢٠+٣٠=٥٠ اتّصالاً بحدّ انتظار ٣٠ث.
+engine = create_async_engine(
+    DATABASE_URL, echo=False, future=True,
+    pool_size=20, max_overflow=30, pool_timeout=30, pool_recycle=1800,
+)
 
 
 @event.listens_for(engine.sync_engine, "connect")
