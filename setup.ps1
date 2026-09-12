@@ -63,16 +63,19 @@ if (-not (Get-NetFirewallRule -DisplayName "PHILO-TECH $Port" -ErrorAction Silen
 }
 Write-Host "[3/4] المنفذ $Port مفتوح للوارد (TCP)" -ForegroundColor Green
 
-# — 4) مهمة مجدولة: نسخ مجلّد data/ احتياطياً يومياً 20:00 —
+# — 4) مهمة مجدولة: نسخة احتياطية متّسقة يومياً 20:00 —
+# لا Copy-Item (ينسخ ملفّاً حيّاً في وضع WAL فتخرج نسخة غير متّسقة)، بل نداء
+# app.backup الذي ينسخ عبر sqlite3.backup ويفحص السلامة ويدوّر آخر 14 يوماً.
 New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
-$backupCmd = "Copy-Item -Path '$DataDir\*' -Destination (Join-Path '$BackupDir' (Get-Date -Format 'yyyyMMdd-HHmmss')) -Recurse -Force"
+$PyExe = Join-Path $ProjectDir ".venv\Scripts\python.exe"
+$backupCmd = "Set-Location '$ProjectDir'; & '$PyExe' -m app.backup"
 $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -WindowStyle Hidden -Command `"$backupCmd`""
 $trigger = New-ScheduledTaskTrigger -Daily -At 8:00PM
 try {
     Register-ScheduledTask -TaskName "PHILO-TECH Backup" -Action $action -Trigger $trigger `
         -RunLevel Highest -Force | Out-Null
-    Write-Host "[4/4] نسخ احتياطي يومي مجدول 20:00 إلى backups\" -ForegroundColor Green
+    Write-Host "[4/4] نسخة احتياطية يومية متّسقة مجدولة 20:00 إلى backups\" -ForegroundColor Green
 } catch {
     Write-Host "[!] تعذّر جدولة النسخ الاحتياطي: $_" -ForegroundColor Yellow
 }

@@ -48,7 +48,13 @@
       <div class="card-body">
         <a class="btn btn-primary w-100 mb-2" href="/admin/import">استيراد لائحة أو نصّ درس</a>
         <a class="btn btn-outline-primary w-100 mb-2" href="/admin/curriculum">إدارة المنهاج</a>
-        <a class="btn btn-outline-secondary w-100" href="/admin/rosters">قوائم التلاميذ</a>
+        <a class="btn btn-outline-secondary w-100 mb-2" href="/admin/rosters">قوائم التلاميذ</a>
+        <form method="post" action="/admin/backup" class="m-0">
+          <button type="submit" class="btn btn-outline-success w-100">💾 نسخة احتياطية الآن</button>
+        </form>
+        {% if request.query_params.get('backup_error') %}
+        <div class="alert alert-danger mt-2 mb-0">تعذّرت النسخة: {{ request.query_params.get('backup_error') }}</div>
+        {% endif %}
       </div>
     </div>
   </div>

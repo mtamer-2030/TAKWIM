@@ -40,6 +40,7 @@ from ..models import (
     StudentReport,
     TextType,
 )
+from ..backup import backup_bytes, try_backup_quiet
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
@@ -146,6 +147,20 @@ async def qr_png_route(request: Request):
     if (g := require_admin(request)):
         return g
     return Response(content=qr_png(_student_url()), media_type="image/png")
+
+
+@router.post("/backup")
+async def backup_now(request: Request):
+    """«نسخة احتياطية الآن»: يأخذ نسخة متّسقة (تُفحَص سلامتها) ويُنزّلها على المتصفّح."""
+    if (g := require_admin(request)):
+        return g
+    try:
+        name, data = await asyncio.to_thread(backup_bytes)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(f"/admin?backup_error={exc}", status_code=303)
+    return Response(
+        content=data, media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # ═══════════════ المنهاج (إضافة سريعة ليكون للنصوص هدف) ═══════════════
@@ -838,6 +853,8 @@ async def session_close(request: Request, sid: int):
             sess.status = "closed"
             sess.closed_at = datetime.now()
             await s.commit()
+    # نسخة احتياطية تلقائية عند إغلاق الجلسة (أفضل جهد — لا تُفشِل الإغلاق).
+    await asyncio.to_thread(try_backup_quiet)
     return RedirectResponse(f"/admin/sessions/{sid}", status_code=303)
 
 
