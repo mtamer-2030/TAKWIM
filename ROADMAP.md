@@ -435,7 +435,7 @@ tests/: test_scoring · test_codes · test_normalize · test_docx · test_valida
 | ١-أ حذف v1 | ✅ منجَز | 2026-09-11 | 33d04ac |
 | ١-ب توحيد الإنجازات | مصادَق عليه — تصميم معلّق | | |
 | ١-ج المهارات الستّ | ✅ منجَز | 2026-09-11 | 857d87b |
-| ١-د تنظيف constants | لم يبدأ | | |
+| ١-د تنظيف constants | ✅ منجَز (KIND_LABELS + DIAGNOSTIC_SEED؛ COMPETENCIES/KINDS يبقيان — يستعملهما validation) | 2026-09-12 | 69aed43 |
 | ٢-أ نسخ احتياطي | لم يبدأ | | |
 | ٢-ب Alembic حصراً | لم يبدأ | | |
 | ٣-أ … ٣-هـ الأمن | لم يبدأ | | |

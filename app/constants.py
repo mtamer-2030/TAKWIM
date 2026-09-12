@@ -25,12 +25,6 @@ CODE_SUFFIX_LEN = 2
 # ——— الكيانات المغلقة ———
 KINDS = ("diagnostic", "exercise", "exam")
 
-KIND_LABELS: dict[str, str] = {
-    "diagnostic": "تقويم تشخيصي",
-    "exercise": "تمرين كتابة",
-    "exam": "فرض محروس",
-}
-
 COMPETENCIES: dict[str, str] = {
     "problematization": "الأشكلة",
     "conceptualization": "المفهمة",
@@ -78,19 +72,6 @@ IDENTITY_EVENTS = (
 )
 
 CHECK_RULE_TYPES = ("any_of", "all_of", "none_of", "min_chars", "max_chars", "regex")
-
-# ——— رموز الأخطاء المشخِّصة الأوّليّة (CLAUDE.md §11) ———
-# اللائحة مفتوحة وقابلة للتوسيع من لوحة الأستاذ؛ هذه بذرتها فقط.
-DIAGNOSTIC_SEED: dict[str, str] = {
-    "copy_verbatim": "نسخ من النصّ بلا تحويل",
-    "argument_as_thesis": "خلط الحجّة بالأطروحة",
-    "example_as_argument": "خلط المثال بالحجّة",
-    "external_projection": "إسقاط رأي خارج النصّ",
-    "descriptive_not_problematic": "سؤال معرفي لا إشكال فلسفي",
-    "statement_not_question": "تقرير في موضع الإشكال",
-    "concept_confusion": "خلط بين مفهومين",
-    "missing_tension": "غياب التوتّر بين موقفين",
-}
 
 
 def level_of_class_label(label: str) -> str | None:
