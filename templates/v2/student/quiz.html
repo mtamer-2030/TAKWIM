@@ -2,6 +2,19 @@
 {% block title %}{{ quiz.title }} · PHILO-TECH{% endblock %}
 {% block body %}
 {% set saved = saved or {} %}
+<style>
+  /* مناطق لمس مريحة على الهاتف (المرحلة ٦): حدّ أدنى ~44px، خطّ أكبر. */
+  #quizForm label { display: flex; align-items: center; gap: .6rem;
+    min-height: 44px; padding: .5rem .2rem; font-size: 1rem; cursor: pointer; }
+  #quizForm input[type=radio], #quizForm input[type=checkbox] {
+    width: 1.3rem; height: 1.3rem; flex: 0 0 auto; }
+  #quizForm input[type=text], #quizForm textarea, #quizForm select {
+    min-height: 44px; font-size: 1rem; }
+  #netBanner { position: sticky; top: 0; z-index: 5; display: none;
+    background: #c62828; color: #fff; text-align: center; padding: .5rem;
+    border-radius: .4rem; margin-bottom: .6rem; font-size: .9rem; }
+  #netBanner.show { display: block; }
+</style>
 <div class="pt-shell">
   <div class="pt-header">
     <span class="brand">PHILO-TECH</span>
@@ -9,6 +22,7 @@
   </div>
   <div class="pt-main">
     <h3 style="margin:.2rem 0 1rem">{{ quiz.title }}</h3>
+    <div id="netBanner">⚠ انقطع الاتصال بالشبكة — أجوبتك محفوظة، تابع؛ سنعيد الحفظ عند العودة.</div>
     <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
     {% for q in quiz.questions %}
       {% set a = saved.get(q.id) or {} %}
@@ -25,18 +39,18 @@
 
         {% if q.qtype == 'mcq_single' %}
           {% for opt in q.payload.options %}
-            <label style="display:block;padding:.35rem 0">
+            <label>
               <input type="radio" name="q_{{ q.id }}" value="{{ loop.index0 }}"
-                     {% if a.get('choice') == loop.index0 %}checked{% endif %}> {{ opt }}
+                     {% if a.get('choice') == loop.index0 %}checked{% endif %}> <span>{{ opt }}</span>
             </label>
           {% endfor %}
 
         {% elif q.qtype == 'mcq_multi' %}
           {% set chosen = a.get('choices') or [] %}
           {% for opt in q.payload.options %}
-            <label style="display:block;padding:.35rem 0">
+            <label>
               <input type="checkbox" name="q_{{ q.id }}" value="{{ loop.index0 }}"
-                     {% if loop.index0 in chosen %}checked{% endif %}> {{ opt }}
+                     {% if loop.index0 in chosen %}checked{% endif %}> <span>{{ opt }}</span>
             </label>
           {% endfor %}
 
@@ -117,6 +131,7 @@
   var form = document.getElementById('quizForm');
   var status = document.getElementById('saveStatus');
   if (!form) return;
+  var banner = document.getElementById('netBanner');
   var timer = null, submitting = false;
   form.addEventListener('submit', function () { submitting = true; });
   function save() {
@@ -130,6 +145,13 @@
   form.addEventListener('input', schedule);
   form.addEventListener('change', schedule);
   setInterval(save, 20000);
+  // مؤشّر انقطاع الشبكة (المرحلة ٦): يطمئن المتعلّم أنّ عمله محفوظ ويعيد الحفظ عند العودة.
+  function netState() {
+    if (navigator.onLine) { banner.classList.remove('show'); save(); }
+    else { banner.classList.add('show'); }
+  }
+  window.addEventListener('online', netState);
+  window.addEventListener('offline', netState);
 })();
 </script>
 {% endblock %}
