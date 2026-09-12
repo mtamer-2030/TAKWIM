@@ -59,6 +59,7 @@
   <div class="alert alert-info">لا تقاويم مصادَق عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً من «التقاويم بالأسئلة ← تصحيح».</div>
 {% endif %}
 {% endblock %}
+{% block chartjs %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}
 {% block scripts %}
 {% if data and data.has_data %}
 <script>

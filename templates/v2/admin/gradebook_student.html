@@ -52,6 +52,7 @@
   <div class="alert alert-info">لا تقاويم مصادَق عليها بعد لهذا التلميذ.</div>
 {% endif %}
 {% endblock %}
+{% block chartjs %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}
 {% block scripts %}
 {% if data.has_data %}
 <script>

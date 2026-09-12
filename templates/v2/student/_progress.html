@@ -19,8 +19,21 @@
   <script>
   (function () {
     var data = {{ radar|safe }};
-    var el = document.getElementById("skillRadar");
-    if (!el || !window.Chart) return;
+    function draw() {
+      var el = document.getElementById("skillRadar");
+      if (!el || !window.Chart) return;
+      _drawRadar(el, data);
+    }
+    // تحميل Chart.js كسولاً عند فتح هذا التبويب فقط (لا يُثقَل كلّ صفحات الهاتف).
+    if (window.Chart) { draw(); }
+    else {
+      var s = document.createElement("script");
+      s.src = "/static/vendor/chart.umd.min.js";
+      s.onload = draw;
+      document.head.appendChild(s);
+    }
+  })();
+  function _drawRadar(el, data) {
     new Chart(el, {
       type: "radar",
       data: {
@@ -45,7 +58,7 @@
         }
       }
     });
-  })();
+  }
   </script>
 {% else %}
   <div class="pt-card muted">لم تُصحَّح إنجازاتك بعد. ستظهر صورة تقدّمك هنا بعد تصحيح الأستاذ.</div>

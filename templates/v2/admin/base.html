@@ -40,7 +40,8 @@
   <script src="/static/vendor/tabler.min.js" defer></script>
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine.min.js" defer></script>
-  <script src="/static/vendor/chart.umd.min.js" defer></script>
+  {# Chart.js يُحمَّل فقط في الصفحات التي ترسم رسوماً (لوحة/تقارير)، ٤-د. #}
+  {% block chartjs %}{% endblock %}
   {% block scripts %}{% endblock %}
 </body>
 </html>
