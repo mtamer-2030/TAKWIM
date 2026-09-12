@@ -976,6 +976,62 @@ async def gradebook(request: Request):
         _ctx(request, groups=groups, selected=selected, data=data))
 
 
+@router.get("/gradebook/export")
+async def gradebook_export(request: Request):
+    """تصدير التقرير التراكميّ للفوج (نقط صريحة للأستاذ) إلى Excel أو CSV — لنقلها
+    إلى سجلّ النقط الرسميّ. للأستاذ وحده؛ لا يخالف ق-٤ (لا يراه المتعلّم).
+    fmt=xlsx (الافتراض) أو csv."""
+    if (g := require_admin(request)):
+        return g
+    group = request.query_params.get("group") or ""
+    fmt = (request.query_params.get("fmt") or "xlsx").lower()
+    if not group:
+        return RedirectResponse("/admin/gradebook", status_code=303)
+    async with AsyncSessionLocal() as s:
+        data = await class_gradebook(s, group)
+    if not data or not data.get("has_data"):
+        return RedirectResponse(
+            f"/admin/gradebook?group={group}&error=لا بيانات للتصدير.", status_code=303)
+
+    import io
+    import pandas as pd
+
+    evals = data["evaluations"]
+    cols = [f"{e['title']} ({e['date']})" for e in evals]
+    rows = []
+    for srow in data["students"]:
+        rec = {"التلميذ": srow["student"].full_name}
+        for e, col in zip(evals, cols):
+            v = srow["per"].get(e["quiz_id"])
+            rec[col] = v if v is not None else ""
+        rec["المعدّل العامّ ٪"] = srow["overall"] if srow["overall"] is not None else ""
+        rows.append(rec)
+    # صفّ معدّل القسم لكلّ تقويم.
+    avg_rec = {"التلميذ": "معدّل القسم"}
+    for e, col in zip(evals, cols):
+        avg_rec[col] = e.get("class_avg") if e.get("class_avg") is not None else ""
+    avg_rec["المعدّل العامّ ٪"] = data.get("class_overall") if data.get("class_overall") is not None else ""
+    rows.append(avg_rec)
+
+    df = pd.DataFrame(rows, columns=["التلميذ", *cols, "المعدّل العامّ ٪"])
+
+    if fmt == "csv":
+        # utf-8-sig ليفتح Excel العربية سليمةً.
+        body = df.to_csv(index=False).encode("utf-8-sig")
+        return Response(
+            content=body, media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="gradebook-{group}.csv"'})
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xl:
+        df.to_excel(xl, index=False, sheet_name=group[:31] or "التقرير")
+        xl.sheets[list(xl.sheets)[0]].sheet_view.rightToLeft = True   # عرض RTL
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="gradebook-{group}.xlsx"'})
+
+
 @router.get("/gradebook/student/{student_id}", response_class=HTMLResponse)
 async def gradebook_student(request: Request, student_id: int):
     """تقرير تلميذ تراكميّ: منحنى نسبته عبر التقاويم + رادار المهارات + جدول قابل للطباعة."""

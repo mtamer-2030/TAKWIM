@@ -3,12 +3,21 @@
 {% block content %}
 <h2 class="h2 mb-3">التقارير التراكمية — دفتر النقط</h2>
 
-<form method="get" action="/admin/gradebook" class="mb-3 d-flex gap-2" style="max-width:24rem">
-  <select name="group" class="form-select" onchange="this.form.submit()">
-    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g==selected }}>{{ g }}</option>{% endfor %}
-  </select>
-  <noscript><button class="btn btn-primary">عرض</button></noscript>
-</form>
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+  <form method="get" action="/admin/gradebook" class="d-flex gap-2" style="max-width:24rem">
+    <select name="group" class="form-select" onchange="this.form.submit()">
+      {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g==selected }}>{{ g }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn btn-primary">عرض</button></noscript>
+  </form>
+  {% if data and data.has_data %}
+    <a class="btn btn-outline-success" href="/admin/gradebook/export?group={{ selected }}&fmt=xlsx">⬇ تصدير Excel</a>
+    <a class="btn btn-outline-secondary" href="/admin/gradebook/export?group={{ selected }}&fmt=csv">⬇ CSV</a>
+  {% endif %}
+</div>
+{% if request.query_params.get('error') %}
+  <div class="alert alert-warning">{{ request.query_params.get('error') }}</div>
+{% endif %}
 
 {% if data and data.has_data %}
   <div class="card mb-3"><div class="card-body">
