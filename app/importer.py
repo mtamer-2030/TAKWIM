@@ -73,26 +73,83 @@ def extract_text_from_pptx(data: bytes) -> str:
 
 
 def extract_text_from_pdf(data: bytes) -> str:
+    """نصّ PDF عبر pdfplumber. إن عاد فارغاً (PDF ممسوح ضوئياً = صور صفحات)، يُجرَّب
+    OCR على صور الصفحات إن توفّر مُصيّر؛ وإلّا تُرفع رسالة واضحة بدل نصّ فارغ صامت."""
     try:
         import pdfplumber
     except ImportError as e:  # pragma: no cover
         raise ImporterError("مكتبة pdfplumber غير مثبّتة.") from e
     try:
         parts: list[str] = []
+        page_images = []
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             for i, page in enumerate(pdf.pages, start=1):
                 txt = (page.extract_text() or "").strip()
                 if txt:
                     parts.append(f"[صفحة {i}]\n{txt}")
-        return "\n\n".join(parts)
+                else:
+                    page_images.append((i, page))
+            # صفحات بلا نصّ مضمَّن ← محاولة OCR (رجوع تلقائي، ٥-ب) إن توفّر تصيير.
+            if page_images and not parts:
+                ocr = _ocr_pdf_pages(page_images)
+                if ocr:
+                    return ocr
+        result = "\n\n".join(parts)
+        if not result:
+            raise ImporterError(
+                "لم يُستخرَج أيّ نصّ: يبدو الملفّ PDF ممسوحاً ضوئياً (صور صفحات) "
+                "بلا نصّ مضمَّن. صدّر الصفحات صوَراً (JPG/PNG) لاستعمال التعرّف "
+                "الضوئي على الحروف، أو استعمل قالب Word/JSON.")
+        return result
     except ImporterError:
         raise
     except Exception as e:
         raise ImporterError(f"تعذّرت قراءة ملفّ PDF: {e}") from e
 
 
+def _ocr_pdf_pages(page_images) -> str:
+    """OCR لصفحات PDF المصوّرة إن أمكن تصييرها عبر pdfplumber. رجوع صامت (سلسلة
+    فارغة) إن تعذّر التصيير (لا مُصيّر مثبَّت) — فيتولّى النداءُ رفعَ رسالة واضحة."""
+    try:
+        import pytesseract  # noqa: F401
+    except ImportError:
+        return ""
+    parts: list[str] = []
+    for i, page in page_images:
+        try:
+            pil = page.to_image(resolution=300).original      # يحتاج مُصيّراً
+            parts.append(f"[صفحة {i}]\n{_ocr_pil(pil)}")
+        except Exception:  # noqa: BLE001 — لا مُصيّر/فشل تصيير ← نترك الرجوع للنداء
+            return ""
+    return "\n\n".join(p for p in parts if p.strip())
+
+
+def _preprocess_for_ocr(img):
+    """معالجة قبلية ترفع دقّة OCR: رمادي + تكبير الصور الصغيرة + رفع التباين + عتبة.
+
+    دالّة نقيّة على صورة PIL (تُختبَر بلا ثنائي Tesseract)."""
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(img)          # تصحيح دوران الهاتف
+    img = img.convert("L")                       # تدرّج رمادي
+    # تكبير الصور منخفضة الدقّة (Tesseract يحبّ ~300DPI؛ العرض <1500 يُضاعَف).
+    if img.width < 1500:
+        scale = 1500 / img.width
+        img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
+    img = ImageOps.autocontrast(img)             # رفع التباين
+    img = img.point(lambda p: 255 if p > 160 else 0)  # عتبة ثنائية (أبيض/أسود)
+    return img
+
+
+def _ocr_pil(img, lang: str = "ara") -> str:
+    """OCR لصورة PIL بعد المعالجة القبلية و psm مناسب لكتلة نصّ."""
+    import pytesseract
+    return pytesseract.image_to_string(
+        _preprocess_for_ocr(img), lang=lang, config="--psm 6").strip()
+
+
 def extract_text_from_image(data: bytes, lang: str = "ara") -> str:
-    """OCR لصورة صفحة كتاب. يتطلّب ثنائي Tesseract + حزمة اللغة العربية 'ara'."""
+    """OCR لصورة صفحة كتاب. يتطلّب ثنائي Tesseract + حزمة اللغة العربية 'ara'.
+    مع معالجة قبلية (رمادي/تباين/عتبة/تكبير) و --psm 6 لرفع الدقّة (٥-ب)."""
     try:
         import pytesseract
         from PIL import Image
@@ -103,7 +160,7 @@ def extract_text_from_image(data: bytes, lang: str = "ara") -> str:
     except Exception as e:
         raise ImporterError(f"تعذّرت قراءة الصورة: {e}") from e
     try:
-        return pytesseract.image_to_string(img, lang=lang).strip()
+        return _ocr_pil(img, lang=lang)
     except pytesseract.TesseractNotFoundError as e:
         raise ImporterError(
             "لم يُعثر على Tesseract OCR. ثبّته وأضِف حزمة اللغة العربية 'ara' "
