@@ -57,6 +57,8 @@ from .web import (
     ADMIN_COOKIE,
     check_admin_password,
     issue_admin_token,
+    next_login_delay,
+    record_login_result,
     require_admin,
     revoke_admin_token,
     skill_id_map,
@@ -84,11 +86,17 @@ def login_page(request: Request):
 
 
 @router.post("/login")
-def login(request: Request, password: str = Form(...)):
+async def login(request: Request, password: str = Form(...)):
+    # تأخير تصاعدي على الفشل المتتالي (ح-٨) — يبطّئ التخمين قبل الردّ.
+    delay = next_login_delay()
+    if delay:
+        await asyncio.sleep(delay)
     if not check_admin_password(password):
+        record_login_result(False)
         return templates.TemplateResponse(
             "admin/login.html", _ctx(request, error="كلمة السرّ غير صحيحة."),
             status_code=401)
+    record_login_result(True)
     resp = RedirectResponse("/admin", status_code=303)
     resp.set_cookie(ADMIN_COOKIE, issue_admin_token(), httponly=True, samesite="lax")
     return resp

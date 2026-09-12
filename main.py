@@ -53,6 +53,20 @@ def _print_access_banner() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # ح-٨: يُرفَض الإقلاع بكلمة السرّ الافتراضية (أو الفارغة) — لئلّا تُفتح لوحة
+    # الأستاذ على الشبكة بلا حماية. رسالة عربية واضحة تدلّ على الإصلاح.
+    if settings.password_is_default:
+        msg = (
+            "\n" + "═" * 56 +
+            "\n   ⛔ تعذّر الإقلاع: كلمة سرّ الأستاذ لم تُضبَط بعد.\n"
+            "   افتح config.ini وغيّر في القسم [teacher] السطر:\n"
+            "       password = change-me-please\n"
+            "   إلى كلمة سرّ خاصّة بك، ثمّ أعد التشغيل.\n"
+            "   (إن لم يوجد config.ini فانسخه من config.ini.example.)\n"
+            + "═" * 56 + "\n")
+        print(msg)
+        raise RuntimeError("كلمة سرّ الأستاذ الافتراضية — اضبطها في config.ini قبل التشغيل.")
+
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     # Alembic مصدرُ الحقيقة الوحيد للمخطّط (البند ٢-ب): يبني قاعدة جديدة من الصفر،
     # ويُهاجر القائمة إلى head، ويتبنّى قاعدة قديمة بُنيت بـ create_all بوسمها ثمّ

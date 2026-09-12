@@ -28,7 +28,7 @@ from ..models import (
 from ..constants import QUESTION_TYPES_CLOSED
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
-from .web import STUDENT_COOKIE, current_student_id, templates
+from .web import STUDENT_COOKIE, current_student_id, issue_student_cookie, templates
 
 router = APIRouter(prefix="/student")
 
@@ -85,7 +85,8 @@ async def login_confirm(request: Request, code: str = Form(...)):
     if student is None:
         return RedirectResponse("/student", status_code=303)
     resp = RedirectResponse("/student/home", status_code=303)
-    resp.set_cookie(STUDENT_COOKIE, str(student.id), httponly=True, samesite="lax")
+    resp.set_cookie(STUDENT_COOKIE, issue_student_cookie(student.id),
+                    httponly=True, samesite="lax")
     return resp
 
 

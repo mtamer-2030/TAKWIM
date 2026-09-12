@@ -14,6 +14,7 @@ from ..constants import LEVELS, SKILLS  # {code: arabic_name} + المهارات
 from ..database import AsyncSessionLocal
 from ..models import Level, Skill
 from ..settings import settings
+from ..signing import sign, unsign
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -33,30 +34,47 @@ class _Templates(Jinja2Templates):
 templates = _Templates(directory=str(BASE_DIR / "templates" / "v2"))
 templates.env.globals.update({"LEVELS": LEVELS})
 
-# ——— استيثاق الأستاذ (كلمة سرّ config.ini، رمز في الذاكرة) ———
+# ——— استيثاق الأستاذ والتلميذ عبر كوكيز موقَّعة (ح-١، ح-٩) ———
+# لا رموز في الذاكرة ولا معرّف تلميذ خام قابل للتزوير: القيمة تُوقَّع بسرّ الخادم،
+# فتصمد عبر إعادة التشغيل ويُرفَض أيّ كوكي مزوَّر.
 ADMIN_COOKIE = "pt_admin"
 STUDENT_COOKIE = "pt_student"
-_admin_tokens: set[str] = set()
+_ADMIN_MARKER = "admin"
 
 
 def check_admin_password(password: str) -> bool:
-    return secrets.compare_digest(password or "", settings.teacher_password)
+    """مقارنة تجزئة كلمة السرّ (لا نصّاً) مقارنةً ثابتة الزمن (ح-٨)."""
+    import hashlib
+    given = hashlib.sha256((password or "").encode("utf-8")).hexdigest()
+    return secrets.compare_digest(given, settings.teacher_password_hash)
+
+
+# تأخير تصاعدي على محاولات الدخول الفاشلة (ح-٨): يبطّئ التخمين على الشبكة المحلّية.
+_failed_admin_attempts = 0
+
+
+def next_login_delay() -> float:
+    """ثوانٍ انتظار قبل الردّ على محاولة دخول، تتصاعد مع الفشل المتتالي (بحدّ أقصى)."""
+    return min(2.0 ** _failed_admin_attempts - 1, 8.0) if _failed_admin_attempts else 0.0
+
+
+def record_login_result(ok: bool) -> None:
+    global _failed_admin_attempts
+    _failed_admin_attempts = 0 if ok else _failed_admin_attempts + 1
 
 
 def issue_admin_token() -> str:
-    t = secrets.token_urlsafe(24)
-    _admin_tokens.add(t)
-    return t
+    """قيمة كوكي أستاذ موقَّعة (بلا حالة على الخادم) — تُوضَع في كوكي pt_admin."""
+    return sign(_ADMIN_MARKER)
 
 
 def revoke_admin_token(token: str | None) -> None:
-    if token:
-        _admin_tokens.discard(token)
+    """لا حالة تُلغى (الكوكي موقَّع بلا خادم)؛ الخروج يُمحى بحذف الكوكي."""
+    return None
 
 
 def is_admin(request: Request) -> bool:
-    t = request.cookies.get(ADMIN_COOKIE)
-    return bool(t and t in _admin_tokens)
+    return unsign(request.cookies.get(ADMIN_COOKIE)) == _ADMIN_MARKER
 
 
 def require_admin(request: Request):
@@ -64,11 +82,15 @@ def require_admin(request: Request):
     return None if is_admin(request) else RedirectResponse("/admin/login", status_code=303)
 
 
+def issue_student_cookie(student_id: int) -> str:
+    """قيمة كوكي تلميذ موقَّعة تحمل معرّفه — تُوضَع في كوكي pt_student."""
+    return sign(str(student_id))
+
+
 def current_student_id(request: Request) -> int | None:
-    raw = request.cookies.get(STUDENT_COOKIE)
-    if raw and raw.isdigit():
-        return int(raw)
-    return None
+    """معرّف التلميذ من كوكي موقَّع؛ يُرفَض أيّ كوكي غير موقَّع (منع الانتحال)."""
+    raw = unsign(request.cookies.get(STUDENT_COOKIE))
+    return int(raw) if raw and raw.isdigit() else None
 
 
 async def seed_levels() -> None:
