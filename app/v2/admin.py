@@ -22,6 +22,7 @@ from ..ai_feedback import (
 )
 from ..database import AsyncSessionLocal
 from ..docx_import import parse_docx, parse_lines
+from ..docx_template import build_template_docx
 from ..importer import ImporterError, extract_text, parse_students_excel
 from ..models import (
     Answer,
@@ -622,6 +623,18 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
     return RedirectResponse(
         f"/admin/quizzes?saved=تمّ استيراد «{normalized['title']}» بـ{n} سؤالاً.",
         status_code=303)
+
+
+@router.get("/quizzes/template")
+async def quiz_template(request: Request):
+    """تنزيل قالب Word لتأليف تقويم يدوياً (ميزة أُعيدت بعد أن ضاعت في الانتقال، ٥-د)."""
+    if (g := require_admin(request)):
+        return g
+    data = await asyncio.to_thread(build_template_docx)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": 'attachment; filename="philotech-quiz-template.docx"'})
 
 
 @router.post("/quizzes/{quiz_id}/assign")

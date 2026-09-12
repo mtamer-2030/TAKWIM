@@ -62,6 +62,13 @@ def test_build_quiz_without_map_leaves_skill_none():
     assert all(q.skill_id is None for q in quiz.questions)
 
 
+def test_word_template_builds_valid_docx():
+    """٥-د: قالب Word لتأليف تقويم يُبنى كملفّ docx صالح (بادئة ZIP، غير فارغ)."""
+    from app.docx_template import build_template_docx
+    data = build_template_docx()
+    assert data[:2] == b"PK" and len(data) > 1000
+
+
 def test_invalid_json_raises_with_errors():
     bad = {"title": "x", "kind": "لا_يوجد", "questions": []}
     with pytest.raises(QuizImportError) as exc:
