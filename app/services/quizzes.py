@@ -74,10 +74,11 @@ def _mcq_from_text(prompt_part: str, opts_part: str) -> dict | None:
         options.append(opt)
     if len(options) < 2:
         return None
-    prompt = prompt_part.strip().rstrip(":：").strip() or "اختر"
-    # «كلّ/جميع/التي» تلمّح إلى تعدّد الصواب؛ وإلّا فاختيارٌ واحد.
-    multi = any(w in prompt for w in ("كل ", "كلّ", "جميع", "التي", "ما يلي مما"))
-    qtype = "mcq_multi" if (multi or len(correct) > 1) else "mcq_single"
+    prompt = _LEAD.sub("", prompt_part).strip().rstrip(":：").strip() or "اختر"
+    # «كلّ/جميع» تلمّح إلى تعدّد الصواب؛ وإلّا فاختيارٌ واحد. (لا نعدّ «التي» لكثرتها.)
+    multi = any(w in prompt for w in ("كل ", "كلّ", "جميع", "جميعها", "كلها", "كلّها")) \
+        or len(correct) > 1
+    qtype = "mcq_multi" if multi else "mcq_single"
     return {"type": qtype, "competency": None, "prompt": prompt, "stimulus": None,
             "max_score": 2.0, "options": options, "correct": correct,
             "payload": {}, "indicators": [], "penalties": [], "auto_scored": False}
@@ -89,12 +90,15 @@ def _open_q(prompt: str) -> dict:
             "indicators": [], "penalties": [], "auto_scored": False}
 
 
-def _skip_q(prompt: str) -> dict:
-    """سطر يُرجَّح أنه عنوان/ترويسة — يظهر في المراجعة مؤشَّراً «تخطَّ» لا يُحفَظ."""
+def _as(prompt: str, qtype: str) -> dict:
     q = _open_q(prompt)
-    q["type"] = "skip"
-    q["max_score"] = 0.0
+    q["type"] = qtype
+    q["max_score"] = 0.0 if qtype in ("skip", "heading", "passage") else q["max_score"]
     return q
+
+
+_SEP_RE = _re.compile(r"^[\s_\-–—=.·•*─-╿]{4,}$")   # سطر فاصل (خطوط/نقاط)
+_NUM_START = _re.compile(r"^\s*(?:\d+|[٠-٩]+)\s*[).:\-–—]")   # يبدأ بترقيم (سؤال/قسم)
 
 
 # عناوين أقسام شائعة في الفروض المغربيّة (لا أسئلة).
@@ -111,14 +115,24 @@ def _is_section_title(line: str) -> bool:
     """سطر عنوانٍ (قسم/محور/معارف…) لا سؤال — بلا خانات ولا استفهام."""
     if _BOX_ANY.search(line) or line.endswith("؟"):
         return False
-    if _Q_VERB.match(line):
+    core = _LEAD.sub("", line).strip()          # نتجاهل الترقيم البادئ (1. / 2-)
+    if _Q_VERB.match(core):                       # يبدأ بفعل سؤال → سؤال لا عنوان
         return False
-    if _SECTION_RE.match(line):
+    if _SECTION_RE.match(core):
         return True
-    # عنوان قصير ينتهي بنقاط بين قوسين ((4.5 نقط)) وليس سؤالاً.
-    if _re.search(r"\(\s*[\d.,٠-٩]+\s*(?:نقط|نقطة|ن)\s*\)", line) and len(line) <= 70:
+    # عنوانٌ ينتهي بنقاط بين قوسين ((4.5 نقط)) وليس سؤالاً.
+    if _re.search(r"\(\s*[\d.,٠-٩]+\s*(?:نقط|نقطة|ن)\s*\)", core) and len(core) <= 80:
         return True
     return False
+
+
+def _is_passage(line: str) -> bool:
+    """فقرة نصّ للقراءة: طويلة، بلا خانات ولا ترقيم سؤال ولا استفهام، ليست عنواناً."""
+    if _BOX_ANY.search(line) or line.endswith("؟") or _NUM_START.match(line):
+        return False
+    if _is_header(line) or _is_section_title(line):
+        return False
+    return len(line) >= 120
 
 
 def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
@@ -137,11 +151,20 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     while i < n:
         ln = lines[i]
         boxes = list(_BOX_ANY.finditer(ln))
-        # ترويسة إداريّة أو عنوان قسم (بلا خانات) → يظهر مؤشَّراً «تخطَّ» لا سؤالاً.
-        if not boxes and (_is_header(ln) or _is_section_title(ln)):
-            questions.append(_skip_q(_LEAD.sub("", ln).strip()))
-            i += 1
-            continue
+        if not boxes:
+            # عناصر عرضٍ لا أسئلة: فاصل يُحذف؛ ترويسة/عنوان يُعرَض كعنوان؛ نصّ طويل يُعرَض.
+            if _SEP_RE.match(ln):
+                questions.append(_as(ln, "skip"))
+                i += 1
+                continue
+            if _is_header(ln) or _is_section_title(ln):
+                questions.append(_as(_LEAD.sub("", ln).strip(), "heading"))
+                i += 1
+                continue
+            if _is_passage(ln):
+                questions.append(_as(ln, "passage"))
+                i += 1
+                continue
         if len(boxes) >= 2:
             # خيارات مضمَّنة في السطر نفسه: ما قبل أوّل علامة سؤالٌ، والباقي خيارات.
             q = _mcq_from_text(ln[:boxes[0].start()], ln[boxes[0].start():])

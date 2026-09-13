@@ -25,7 +25,7 @@ from ..models import (
     SessionStudent,
     Student,
 )
-from ..constants import QUESTION_TYPES_CLOSED
+from ..constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
 from .web import STUDENT_COOKIE, current_student_id, issue_student_cookie, templates
@@ -347,6 +347,8 @@ async def submit_quiz(request: Request, quiz_id: int):
 
         results = []
         for q in quiz.questions:
+            if q.qtype in DISPLAY_TYPES:          # عنوان/نصّ للعرض — لا جواب له
+                continue
             raw = _raw_from_form(q, form)
             graded = grade_answer(q, raw)
             # المصادقة الآلية للأسئلة المغلقة (تصحيح يقيني) — تدخل التقارير فوراً كما في v1.
@@ -415,6 +417,8 @@ async def save_quiz_draft(request: Request, quiz_id: int):
         }
         changed = False
         for q in quiz.questions:
+            if q.qtype in DISPLAY_TYPES:          # عنوان/نصّ للعرض — لا جواب له
+                continue
             raw = _raw_from_form(q, form)
             existing = existing_by_q.get(q.id)
             if existing:

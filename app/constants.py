@@ -57,6 +57,13 @@ COMPETENCY_TO_SKILL: dict[str, str] = {
 QUESTION_TYPES_CLOSED = ("mcq_single", "mcq_multi", "classify", "order")
 QUESTION_TYPES_OPEN = ("short_text", "grid", "long_text")
 QUESTION_TYPES = QUESTION_TYPES_CLOSED + QUESTION_TYPES_OPEN
+# عناصر عرضٍ لا سؤال: تُعرَض للتلميذ ولا يُجاب عنها ولا تُصحَّح (عنوان قسم / نصّ للقراءة).
+DISPLAY_TYPES = ("heading", "passage")
+
+
+def is_answerable(qtype: str) -> bool:
+    """هل النوع سؤالٌ يُجاب عنه ويُصحَّح؟ (عناصر العرض ليست كذلك)."""
+    return qtype in QUESTION_TYPES
 
 SESSION_STATUS = ("draft", "open", "closed")
 REVEAL_MODES = ("immediate", "none")

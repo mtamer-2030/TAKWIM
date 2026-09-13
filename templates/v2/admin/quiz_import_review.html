@@ -52,7 +52,9 @@
           <option value="short_text" {{ 'selected' if q.type=='short_text' }}>جواب قصير</option>
           <option value="mcq_single" {{ 'selected' if q.type=='mcq_single' }}>اختيار واحد صحيح</option>
           <option value="mcq_multi"  {{ 'selected' if q.type=='mcq_multi' }}>اختيار متعدّد الصواب</option>
-          <option value="skip"       {{ 'selected' if q.type=='skip' }}>✗ مجرّد عنوان — لا يُحفَظ</option>
+          <option value="heading"    {{ 'selected' if q.type=='heading' }}>▸ عنوان (يُعرَض للتلميذ)</option>
+          <option value="passage"    {{ 'selected' if q.type=='passage' }}>▸ نصّ للقراءة (يُعرَض)</option>
+          <option value="skip"       {{ 'selected' if q.type=='skip' }}>✗ تجاهُل — لا يُحفَظ</option>
         </select></div>
         <div class="col-md-4"><input type="number" step="0.25" min="0"
           class="form-control qs" value="{{ q.max_score }}" placeholder="النقطة"></div>
@@ -101,7 +103,9 @@
         <option value="short_text">جواب قصير</option>
         <option value="mcq_single">اختيار واحد صحيح</option>
         <option value="mcq_multi">اختيار متعدّد الصواب</option>
-        <option value="skip">✗ مجرّد عنوان — لا يُحفَظ</option>
+        <option value="heading">▸ عنوان (يُعرَض للتلميذ)</option>
+        <option value="passage">▸ نصّ للقراءة (يُعرَض)</option>
+        <option value="skip">✗ تجاهُل — لا يُحفَظ</option>
       </select></div>
       <div class="col-md-4"><input type="number" step="0.25" min="0"
         class="form-control qs" value="4" placeholder="النقطة"></div>

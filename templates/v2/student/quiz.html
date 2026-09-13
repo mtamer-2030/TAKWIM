@@ -33,11 +33,16 @@
     <h3 style="margin:.2rem 0 1rem">{{ quiz.title }}</h3>
     <div id="netBanner">⚠ انقطع الاتصال بالشبكة.</div>
     <div id="qzProgress">
-      <span class="cnt"><span id="qzDone">0</span>/{{ quiz.questions|length }}</span>
+      <span class="cnt"><span id="qzDone">0</span>/<span id="qzTotal">0</span></span>
       <span class="bar"><i id="qzBar"></i></span>
     </div>
     <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
     {% for q in quiz.questions %}
+      {% if q.qtype == 'heading' %}
+        <h4 style="margin:1.4rem 0 .6rem;color:#0d47a1;font-weight:800;border-bottom:2px solid #cddcf3;padding-bottom:.3rem">{{ q.prompt }}</h4>
+      {% elif q.qtype == 'passage' %}
+        <div style="background:#f6f8fc;border-inline-start:4px solid #0d47a1;border-radius:.5rem;padding:.8rem 1rem;margin-bottom:1rem;line-height:1.9;white-space:pre-wrap">{{ q.prompt }}</div>
+      {% else %}
       {% set a = saved.get(q.id) or {} %}
       <div class="pt-card qz-q" data-qid="{{ q.id }}" style="margin-bottom:1rem">
         <div class="qz-flag">⚠ لم تُجب بعد</div>
@@ -129,6 +134,7 @@
           </table></div>
         {% endif %}
       </div>
+      {% endif %}
     {% endfor %}
       <div id="saveStatus" class="muted" style="font-size:.8rem;text-align:center;min-height:1.1rem;margin-bottom:.4rem"></div>
       <button type="submit" style="width:100%;padding:.8rem;background:#0d47a1;color:#fff;border:none;border-radius:.5rem;font-size:1rem">
@@ -208,6 +214,8 @@
   // ٤-أ: مؤشّر التقدّم — كم سؤالاً أُجيب من الكلّ، ووسم غير المُجاب.
   var cards = Array.prototype.slice.call(form.querySelectorAll('.qz-q'));
   var doneEl = document.getElementById('qzDone');
+  var totEl = document.getElementById('qzTotal');
+  if (totEl) totEl.textContent = cards.length;   // المقام = الأسئلة القابلة للجواب فقط
   var barEl = document.getElementById('qzBar');
   function isAnswered(card) {
     var els = card.querySelectorAll('input, textarea, select');

@@ -44,15 +44,29 @@ class _FormReq:
 
 # ————— المحلّل المتسامح —————
 
-def test_heuristic_skips_header_and_detects_mcq():
+def test_heuristic_header_becomes_heading_and_detects_mcq():
     q = heuristic_quiz_from_text(EXAM, title_hint="فرض")
-    # سطر الترويسة (المستوى/المادة/المدة) يظهر مؤشَّراً «تخطَّ» لا سؤالاً يُحفَظ.
+    # سطر الترويسة (المستوى/المادة/المدة) يصير عنواناً يُعرَض، لا يختفي.
     header = next(x for x in q["questions"] if "المستوى:" in x["prompt"])
-    assert header["type"] == "skip"
+    assert header["type"] == "heading"
     types = [x["type"] for x in q["questions"]]
     assert "mcq_single" in types and "mcq_multi" in types and "long_text" in types
+
+
+def test_heuristic_detects_heading_passage_and_separator():
+    txt = ("2. فهم النص (9 نقط)\n"
+           "____________________\n"
+           "يمر الأطفال في كل مكان عبر التسلسل نفسه للاكتساب فيتدرج من المناغاة إلى الكلمات "
+           "المفردة ومنها إلى الجمل، وهذا التدرج نفسه في كل اللغات مهما اختلفت الثقافات.\n"
+           "1- ما موضوع النص؟\n☐ اللغة\n☐ الطبيعة")
+    q = heuristic_quiz_from_text(txt)
+    types = [x["type"] for x in q["questions"]]
+    assert "heading" in types                 # «فهم النص (9 نقط)»
+    assert "passage" in types                 # الفقرة الطويلة تُعرَض
+    assert "skip" in types                    # سطر «____» يُحذف
+    assert "mcq_single" in types
     mcq1 = next(x for x in q["questions"] if x["type"] == "mcq_single")
-    assert len(mcq1["options"]) == 3 and mcq1["correct"] == []   # الصواب غير مؤشَّر بعد
+    assert len(mcq1["options"]) == 2 and mcq1["correct"] == []   # الصواب غير مؤشَّر بعد
 
 
 def test_heuristic_checked_box_marks_correct():
@@ -61,35 +75,40 @@ def test_heuristic_checked_box_marks_correct():
     assert m["type"] == "mcq_single" and m["options"][m["correct"][0]] == "الرباط"
 
 
-def test_heuristic_flags_titles_as_skip():
+def test_heuristic_flags_titles_as_heading():
     txt = ("المستوى: الجذع | المادة: الفلسفة | المدة: ساعة\n"
            "أولا: أسئلة معرفية\n"
            "معارف عامة (4.5 نقط)\n"
            "اشرح العلاقة بين الوعي واللاوعي.")
     q = heuristic_quiz_from_text(txt)
     by_type = [x["type"] for x in q["questions"]]
-    assert by_type.count("skip") == 3          # الترويسة + عنوانان → تخطَّ
+    assert by_type.count("heading") == 3       # الترويسة + عنوانان → عناوين تُعرَض
     assert "long_text" in by_type              # السؤال الحقيقيّ بقي
 
 
-def test_save_excludes_skip_rows(monkeypatch):
+def test_save_heading_passage_persist_skip_excluded(monkeypatch):
     prep = _setup(monkeypatch)
 
     async def run():
         eng, S, admin_mod, lid = await prep()
         form = FormData([
-            ("level_id", str(lid)), ("count", "2"),
+            ("level_id", str(lid)), ("count", "4"),
             ("r_title", "ف"), ("r_kind", "exam"),
-            ("q_prompt_0", "أولا: أسئلة"), ("q_type_0", "skip"), ("q_score_0", "0"),
-            ("q_prompt_1", "حلّل القولة."), ("q_type_1", "long_text"), ("q_score_1", "8"),
+            ("q_prompt_0", "معارف عامة"), ("q_type_0", "heading"), ("q_score_0", "0"),
+            ("q_prompt_1", "____"), ("q_type_1", "skip"), ("q_score_1", "0"),
+            ("q_prompt_2", "نصّ الأطفال..."), ("q_type_2", "passage"), ("q_score_2", "0"),
+            ("q_prompt_3", "حلّل القولة."), ("q_type_3", "long_text"), ("q_score_3", "8"),
         ])
         await admin_mod.quizzes_import_save(_FormReq(form))
         async with S() as s:
-            n = await s.scalar(select(func.count()).select_from(QuizQuestion))
+            rows = [(qq.qtype, qq.prompt) for qq in
+                    (await s.execute(select(QuizQuestion).order_by(QuizQuestion.position))).scalars()]
         await eng.dispose()
-        return n
+        return rows
 
-    assert asyncio.run(run()) == 1              # صفّ العنوان لم يُحفَظ
+    rows = asyncio.run(run())
+    types = [t for t, _ in rows]
+    assert types == ["heading", "passage", "long_text"]   # skip حُذف، والباقي بقي بالترتيب
 
 
 # ————— مسار الاستيراد → مراجعة —————

@@ -47,7 +47,7 @@ from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
-from ..constants import KINDS, QUESTION_TYPES_CLOSED, level_of_class_label
+from ..constants import DISPLAY_TYPES, KINDS, QUESTION_TYPES_CLOSED, level_of_class_label
 from ..services.quizzes import (
     QuizImportError,
     build_quiz,
@@ -707,9 +707,10 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("استُخرجت أسئلة الملفّ تلقائيّاً (تُكتشَف خانات الاختيار ☐ وتُفصَل خياراتها). "
-            "راجِع كلّ سؤال: عدّل نصّه ونوعه ونقطته، وفي أسئلة الاختيار "
-            "**أشّر الإجابة الصحيحة**، ثمّ احفظ. أضِف أو احذف أسئلةً وخيارات كما تشاء.")
+    note = ("استُخرج الملفّ تلقائيّاً: تُكتشَف خانات الاختيار ☐ وتُفصَل خياراتها، وتُميَّز "
+            "العناوين والنصوص. راجِع كلّ عنصر: العنوان والنصّ يُعرَضان للتلميذ بلا تصحيح؛ "
+            "في أسئلة الاختيار **أشّر الإجابة الصحيحة**؛ و«تجاهُل» يحذف السطر. عدّل النصّ "
+            "والنوع والنقطة، وأضِف أو احذف كما تشاء، ثمّ احفظ.")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
                         group_name=group_name, note=note)
@@ -739,7 +740,11 @@ def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
         if not prompt:                          # صفّ حُذف نصّه → يُتجاهَل
             continue
         qtype = form.get(f"q_type_{i}") or "long_text"
-        if qtype == "skip":                     # مجرّد عنوان — لا يُحفَظ سؤالاً
+        if qtype == "skip":                     # سطر يُتجاهَل — لا يُحفَظ إطلاقاً
+            continue
+        if qtype in DISPLAY_TYPES:              # عنوان/نصّ للقراءة — يُعرَض بلا تصحيح
+            questions.append({"type": qtype, "prompt": prompt, "max_score": 0.0,
+                              "options": [], "correct": []})
             continue
         if qtype not in _REVIEW_OPEN and qtype not in _REVIEW_MCQ:
             qtype = "long_text"
@@ -912,8 +917,11 @@ async def _grade_view(s, quiz_id: int):
         })
         answered.setdefault(q.id, set()).add(student.id)
     # لكلّ سؤال: من لم يجب (متوقَّع بلا أيّ جواب) — الحالة الثالثة.
+    # عناصر العرض (عنوان/نصّ) لا تُصحَّح فلا تظهر في شاشة التصحيح.
     questions = []
     for q in quiz.questions:
+        if q.qtype in DISPLAY_TYPES:
+            continue
         missing = [name for sid_, name in expected.items()
                    if sid_ not in answered.get(q.id, set())]
         questions.append({"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
@@ -960,7 +968,8 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
         if quiz is None:
             return HTMLResponse("التقويم غير موجود", status_code=404)
         open_qs = {q.id: q for q in quiz.questions
-                   if q.qtype not in QUESTION_TYPES_CLOSED}
+                   if q.qtype not in QUESTION_TYPES_CLOSED
+                   and q.qtype not in DISPLAY_TYPES}
         if open_qs:
             answers = (await s.execute(
                 select(Answer).where(Answer.quiz_question_id.in_(list(open_qs))))).scalars().all()
