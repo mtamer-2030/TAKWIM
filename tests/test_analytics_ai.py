@@ -140,6 +140,45 @@ def test_unified_answer_table_mixes_quiz_and_analysis(tmp_path=None):
     assert p["strength"] == "التركيب"
 
 
+def test_confirmed_without_score_is_excluded_not_zeroed():
+    """٤-ب: جواب مصادَق عليه لكن بلا نقطة (manual_score=None وauto_score=None) يجب أن
+    يُستبعَد من المتوسّط، لا أن يُحتسب صفراً فيهبط بالمهارة زوراً."""
+    from app.models import Quiz, QuizQuestion
+
+    async def run():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        Session = async_sessionmaker(eng, expire_on_commit=False)
+        async with Session() as s:
+            lvl = Level(name="الجذع المشترك", code="TC"); s.add(lvl); await s.flush()
+            skills = {n: Skill(name=n, position=i) for i, n in enumerate(SKILLS)}
+            s.add_all(list(skills.values())); await s.flush()
+            st = Student(full_name="ت", level_id=lvl.id, group_name="TC1", massar_code="Q")
+            s.add(st); await s.flush()
+            quiz = Quiz(title="ق", kind="exercise"); s.add(quiz); await s.flush()
+            sk = skills["التركيب"].id
+            q1 = QuizQuestion(quiz_id=quiz.id, qtype="long_text", prompt="س١",
+                              skill_id=sk, max_score=4, position=0)
+            q2 = QuizQuestion(quiz_id=quiz.id, qtype="long_text", prompt="س٢",
+                              skill_id=sk, max_score=4, position=1)
+            s.add_all([q1, q2]); await s.flush()
+            # مصادَق عليه بنقطة حقيقيّة: 3/4 = 75%.
+            s.add(Answer(student_id=st.id, quiz_question_id=q1.id,
+                         auto_score=3, teacher_confirmed=True))
+            # مصادَق عليه لكن بلا أيّ نقطة (سهو الأستاذ): لا يجب أن يصير صفراً.
+            s.add(Answer(student_id=st.id, quiz_question_id=q2.id,
+                         manual_score=None, auto_score=None, teacher_confirmed=True))
+            await s.commit()
+            p = await generate_student_skill_profile(s, st.id)
+        await eng.dispose()
+        return p
+
+    p = asyncio.run(run())
+    # لو احتُسب الجواب بلا نقطة صفراً لصار المتوسّط 0.375؛ الصحيح استبعاده فيبقى 0.75.
+    assert p["skills"]["التركيب"]["avg"] == 0.75
+
+
 def test_class_report_dominant_deficit():
     async def run():
         eng, Session, _ = await _seed()
