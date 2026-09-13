@@ -14,6 +14,15 @@
     background: #c62828; color: #fff; text-align: center; padding: .5rem;
     border-radius: .4rem; margin-bottom: .6rem; font-size: .9rem; }
   #netBanner.show { display: block; }
+  #qzProgress { position: sticky; top: 0; z-index: 4; background: #eef3fb;
+    border: 1px solid #cddcf3; border-radius: .4rem; padding: .5rem .7rem;
+    margin-bottom: .8rem; font-size: .9rem; display: flex; align-items: center; gap: .6rem; }
+  #qzProgress .bar { flex: 1; height: .5rem; background: #d5e2f5; border-radius: 1rem; overflow: hidden; }
+  #qzProgress .bar > i { display: block; height: 100%; width: 0; background: #0d47a1; transition: width .2s; }
+  #qzProgress .cnt { font-weight: 700; color: #0d47a1; white-space: nowrap; }
+  .qz-q.qz-unanswered { border-inline-start: 3px solid #f9a825; }
+  .qz-flag { display: none; font-size: .8rem; color: #b26a00; font-weight: 700; margin-bottom: .4rem; }
+  .qz-q.qz-unanswered .qz-flag { display: block; }
 </style>
 <div class="pt-shell">
   <div class="pt-header">
@@ -23,10 +32,15 @@
   <div class="pt-main">
     <h3 style="margin:.2rem 0 1rem">{{ quiz.title }}</h3>
     <div id="netBanner">⚠ انقطع الاتصال بالشبكة.</div>
+    <div id="qzProgress">
+      <span class="cnt"><span id="qzDone">0</span>/{{ quiz.questions|length }}</span>
+      <span class="bar"><i id="qzBar"></i></span>
+    </div>
     <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
     {% for q in quiz.questions %}
       {% set a = saved.get(q.id) or {} %}
-      <div class="pt-card" style="margin-bottom:1rem">
+      <div class="pt-card qz-q" data-qid="{{ q.id }}" style="margin-bottom:1rem">
+        <div class="qz-flag">⚠ لم تُجب بعد</div>
         <div style="font-weight:700;margin-bottom:.5rem">{{ loop.index }}. {{ q.prompt }}
           <span class="muted" style="font-weight:400;font-size:.8rem">({{ q.max_score }} ن)</span>
         </div>
@@ -191,14 +205,49 @@
       });
   }
 
+  // ٤-أ: مؤشّر التقدّم — كم سؤالاً أُجيب من الكلّ، ووسم غير المُجاب.
+  var cards = Array.prototype.slice.call(form.querySelectorAll('.qz-q'));
+  var doneEl = document.getElementById('qzDone');
+  var barEl = document.getElementById('qzBar');
+  function isAnswered(card) {
+    var els = card.querySelectorAll('input, textarea, select');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.type === 'radio' || el.type === 'checkbox') { if (el.checked) return true; }
+      else if ((el.value || '').trim() !== '') return true;
+    }
+    return false;
+  }
+  function updateProgress() {
+    var done = 0;
+    cards.forEach(function (c) {
+      var ok = isAnswered(c);
+      if (ok) done++;
+      c.classList.toggle('qz-unanswered', !ok);
+    });
+    if (doneEl) doneEl.textContent = done;
+    if (barEl) barEl.style.width = (cards.length ? (done * 100 / cards.length) : 0) + '%';
+    return done;
+  }
+
   function onEdit() {
-    dirty = true; backupLocal(); render();
+    dirty = true; backupLocal(); render(); updateProgress();
     clearTimeout(timer);
     timer = setTimeout(save, 3000);   // ح-١٦: مهلة أطول تقلّل تردّد الحفظ تحت الحمل.
   }
   form.addEventListener('input', onEdit);
   form.addEventListener('change', onEdit);
-  form.addEventListener('submit', function () { submitting = true; clearLocal(); });
+  // ٤-أ: تأكيد التسليم — يمنع التسليم العرَضيّ ويُنبّه إلى الأسئلة غير المُجابة.
+  form.addEventListener('submit', function (e) {
+    var left = cards.length - updateProgress();
+    if (left > 0 && !window.confirm('بقي ' + left + ' سؤالاً بلا جواب.\nهل تريد التسليم رغم ذلك؟ لا يمكن التسليم مرّة أخرى.')) {
+      e.preventDefault();
+      var first = form.querySelector('.qz-unanswered');
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    submitting = true; clearLocal();
+  });
   setInterval(save, 20000);
 
   window.addEventListener('online', function () { render(); save(); });
@@ -220,6 +269,7 @@
       el.value = vals[0];
     }
   }
+  updateProgress();   // الحالة الابتدائيّة من مسوّدة الخادم (ح-٦).
   (function restoreLocal() {
     var raw;
     try { raw = localStorage.getItem(LS_KEY); } catch (e) { return; }
@@ -229,7 +279,7 @@
       Object.keys(saved.data).forEach(function (k) { setField(k, saved.data[k]); });
     } catch (e) { clearLocal(); return; }
     // وجودُ نسخة محلّية يعني أنّ حفظاً سابقاً لم يكتمل: علّمها غير محفوظة وأعد الإرسال.
-    dirty = true; render(); save();
+    dirty = true; render(); updateProgress(); save();
   })();
 })();
 </script>
