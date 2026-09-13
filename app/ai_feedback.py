@@ -86,10 +86,12 @@ def ollama_available() -> bool:
         return False
 
 
-def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None) -> str:
+def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None,
+              num_predict: int = 350) -> str:
     """نداء Ollama /api/generate. يرفع AIUnavailable عند أي تعذّر اتصال/مهلة.
 
     fmt="json" يقيّد المخرَج بمخطّط JSON (بدل تفكيكه بـ regex) — للتصحيح المُعان.
+    num_predict: سقف طول المخرَج (يُرفَع للاستخراج المطوّل مثل استخراج تقويم كامل).
     """
     cfg = settings.local_ai
     if not cfg.enabled:
@@ -103,7 +105,7 @@ def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None) -> s
                # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
                # ويحدّ طول المخرَج فتقلّ مدّة التوليد على المعالج.
                "keep_alive": "30m",
-               "options": {"num_predict": 350, "temperature": 0.3}}
+               "options": {"num_predict": num_predict, "temperature": 0.3}}
     if fmt:
         payload["format"] = fmt   # "json" → مخرَج JSON صالح مضمون من Ollama
     try:
@@ -207,3 +209,39 @@ def suggest_open_score(question_prompt: str, guidance: str, answer_text: str,
         note = (raw or "").strip()[:200]
     score = max(0.0, min(float(max_score or 0), score))
     return round(score, 2), (note or (raw or "").strip()[:200])
+
+
+# ——————————————— الاستيراد الذكيّ: استخراج تقويم من نصّ حرّ (اقتراح يراجعه الأستاذ) ———————————————
+
+SYSTEM_EXTRACT = (
+    "أنت مساعد أستاذ فلسفة مغربيّ. حوّل نصّ التمرين/التقويم المعطى إلى JSON مهيكل "
+    "يمثّل أسئلته. أعِد JSON فقط بلا أيّ شرح، بهذا المخطّط بالضبط:\n"
+    '{"title": "عنوان مختصر", "kind": "exercise", '
+    '"level": "الجذع المشترك أو أولى باك أو ثانية باك أو فارغ", '
+    '"questions": [ {"type": "...", "competency": "...", "prompt": "نصّ السؤال", '
+    '"max_score": 4, "payload": { }} ]}\n'
+    "قواعد صارمة:\n"
+    "- kind من: diagnostic أو exercise أو exam (تشخيصي/تمرين/فرض).\n"
+    "- type من: long_text أو short_text لأسئلة التحليل والإنشاء المفتوحة (payload فارغ {})؛ "
+    "mcq_single (اختيار واحد) مع payload={\"options\":[..],\"correct\":<رقم>} إن كانت هناك خيارات صريحة؛ "
+    "mcq_multi/classify/order فقط إن كان السؤال كذلك بوضوح.\n"
+    "- competency من: problematization (الأشكلة) أو conceptualization (المفهمة) أو "
+    "argumentation (الحجاج) أو synthesis (التركيب) أو knowledge (الاستحضار). اختَر الأنسب.\n"
+    "- max_score عدد موجب.\n"
+    "- لا تخترع أسئلة غير واردة في النصّ؛ اكتب prompt بالعربية كما في المصدر. "
+    "عند الشكّ اجعل السؤال long_text. هذا اقتراحٌ سيراجعه الأستاذ قبل الحفظ."
+)
+
+
+def extract_quiz_json(raw_text: str) -> str:
+    """يستخرج تقويماً (JSON نصّاً) من نصّ حرّ (Word/PDF/OCR) عبر المحرّك المحلّي.
+
+    يعيد سلسلة JSON كما ولّدها المحرّك (fmt=json يضمن JSON صالحاً نحويّاً) — قد لا
+    تطابق المخطّط تماماً، فتُعرَض للأستاذ في صندوق تحرير ليراجعها ويصحّحها قبل الحفظ.
+    يرفع AIUnavailable إن كان المحرّك مغلقاً (تدهور لطيف: يرشد الأستاذ للقالب اليدويّ).
+    """
+    text = (raw_text or "").strip()
+    if not text:
+        raise AIUnavailable("النصّ المستخرَج فارغ — تعذّر إيجاد محتوى في الملفّ.")
+    # نحدّ الطول اتّقاءً لتجاوز سياق النموذج الصغير (نأخذ أوّل ~6000 حرف).
+    return _generate(SYSTEM_EXTRACT, text[:6000], fmt="json", num_predict=2048)

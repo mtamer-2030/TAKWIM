@@ -9,15 +9,17 @@
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">استيراد تقويم</h3>
   <p class="text-secondary">
-    الصيغ المدعومة: <b>JSON</b> (صيغة v1)، <b>Word (.docx)</b> بقالب مِحَكّ،
-    و<b>PDF</b> بنفس بنية القالب. التحويل يقينيّ بالكامل — بلا ذكاء اصطناعي.
-    يتحوّل التقويم إلى أسئلة مغلقة (اختيار/تصنيف/ترتيب) أو مفتوحة، وتُعرض على المتعلّمين.
+    ارفع <b>أيّ ملفّ</b>: JSON أو Word (.docx) أو PDF أو صورة. إن كان بقالب النظام
+    فيُحوَّل يقينيّاً ويُحفَظ مباشرةً؛ وإلّا يستخرج <b>المحرّك المحلّي (Ollama)</b> منه
+    الأسئلة ويصنّفها، ثمّ تُعرَض عليك <b>لمراجعتها وتصحيحها قبل الحفظ</b> — اقتراحٌ
+    تصادق عليه، لا حكم. (للاستخراج الآليّ شغّل Ollama؛ بدونه استعمل قالب Word أو JSON.)
   </p>
   <form method="post" action="/admin/quizzes/import" enctype="multipart/form-data">
     <div class="row">
       <div class="col-md-5 mb-2">
-        <label class="form-label">الملفّ (JSON / Word / PDF)</label>
-        <input type="file" name="file" class="form-control" accept=".json,.docx,.pdf" required>
+        <label class="form-label">الملفّ (JSON / Word / PDF / صورة)</label>
+        <input type="file" name="file" class="form-control"
+               accept=".json,.docx,.pdf,.png,.jpg,.jpeg" required>
       </div>
       <div class="col-md-3 mb-2">
         <label class="form-label">المستوى (اختياري)</label>

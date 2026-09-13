@@ -15,6 +15,7 @@ from sqlalchemy import delete as sa_delete, func, select
 
 from ..ai_feedback import (
     AIUnavailable,
+    extract_quiz_json,
     generate_class_plan,
     generate_student_plan,
     ollama_available,
@@ -648,32 +649,106 @@ async def quizzes(request: Request):
              saved=request.query_params.get("saved")))
 
 
-@router.post("/quizzes/import")
-async def quizzes_import(request: Request, file: UploadFile = File(...),
-                         level_id: str = Form(""), group_name: str = Form("")):
-    """رفع تقويم (JSON/Word/PDF) → أسئلة. تصحيح صارم؛ عند الخطأ تُعرَض الأسباب."""
-    if (g := require_admin(request)):
-        return g
-    data = await file.read()
-    normalized, errors = _normalize_quiz_upload(file.filename, data)
-    if normalized is None:
-        msg = " | ".join(errors) or "تعذّر تحويل الملفّ."
-        return RedirectResponse(f"/admin/quizzes?error={msg}", status_code=303)
-    lid = int(level_id) if level_id.strip().isdigit() else None
-    if lid is None:
-        # ح-٢: لا يُحفَظ تقويم بلا مستوى (لئلّا يُنشَر لاحقاً فيتسرّب لكلّ المستويات).
-        return RedirectResponse(
-            "/admin/quizzes?error=اختر المستوى قبل الاستيراد.", status_code=303)
+async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> tuple[str, int]:
+    """يبني التقويم من صيغة مطبّعة ويحفظه؛ يعيد (العنوان، عدد الأسئلة)."""
     skills = await skill_id_map()
     async with AsyncSessionLocal() as s:
         quiz = build_quiz(normalized, level_id=lid,
                           group_name=group_name.strip() or None, skill_ids=skills)
         s.add(quiz)
         await s.commit()
-        n = len(quiz.questions)
+        return normalized["title"], len(quiz.questions)
+
+
+def _review_page(request: Request, *, draft: str, level_id: str, group_name: str,
+                 note: str = "", errors: list[str] | None = None, is_json: bool = True):
+    """صفحة مراجعة الاستيراد الذكيّ: JSON قابل للتحرير + أخطاء التحقّق + حفظ."""
+    return templates.TemplateResponse(
+        "admin/quiz_import_review.html",
+        _ctx(request, draft=draft, level_id=level_id, group_name=group_name,
+             note=note, errors=errors or [], is_json=is_json))
+
+
+@router.post("/quizzes/import")
+async def quizzes_import(request: Request, file: UploadFile = File(...),
+                         level_id: str = Form(""), group_name: str = Form("")):
+    """رفع تقويم (JSON/Word/PDF/صورة) → أسئلة.
+
+    مساران: (١) يقينيّ — JSON صالح أو قالب Word يُحلَّل حرفيّاً فيُحفَظ مباشرةً.
+    (٢) ذكيّ — أيّ ملفّ آخر: يُستخرَج نصّه ويحوّله المحرّك المحلّي إلى مسوّدة JSON
+    تُعرَض للأستاذ ليراجعها ويصحّحها قبل الحفظ (اقتراحٌ لا حكم، ق-٤)."""
+    if (g := require_admin(request)):
+        return g
+    data = await file.read()
+    lid = int(level_id) if level_id.strip().isdigit() else None
+    if lid is None:
+        # ح-٢: لا يُحفَظ تقويم بلا مستوى (لئلّا يُنشَر لاحقاً فيتسرّب لكلّ المستويات).
+        return RedirectResponse(
+            "/admin/quizzes?error=اختر المستوى قبل الاستيراد.", status_code=303)
+
+    # (١) المسار اليقينيّ: JSON صالح أو قالب Word/PDF يُحلَّل حرفيّاً → حفظ مباشر.
+    normalized, errors = _normalize_quiz_upload(file.filename, data)
+    if normalized is not None:
+        title, n = await _save_normalized_quiz(normalized, lid, group_name)
+        return RedirectResponse(
+            f"/admin/quizzes?saved=تمّ استيراد «{title}» بـ{n} سؤالاً.", status_code=303)
+
+    # (٢) المسار الذكيّ: استخراج نصّ الملفّ ثمّ توليد مسوّدة JSON بالمحرّك المحلّي.
+    name = (file.filename or "").lower()
+    if name.endswith(".json"):
+        # JSONهم لم يطابق المخطّط — نعرضه لتصحيحه يدويّاً (بلا محرّك).
+        return _review_page(
+            request, draft=data.decode("utf-8", "replace"),
+            level_id=level_id, group_name=group_name,
+            note="ملفّ JSON لم يطابق المخطّط — صحّحه هنا ثمّ احفظ.", errors=errors)
+    try:
+        raw = extract_text(file.filename, data).text
+    except (ImporterError, Exception) as exc:  # noqa: BLE001
+        return RedirectResponse(
+            f"/admin/quizzes?error=تعذّر قراءة الملفّ: {exc}", status_code=303)
+    try:
+        draft = await asyncio.to_thread(extract_quiz_json, raw)
+        try:                                    # تجميل JSON إن أمكن
+            draft = json.dumps(json.loads(draft), ensure_ascii=False, indent=2)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        note = "استُخرجت المسوّدة آليّاً بالمحرّك المحلّي — راجِعها وصحّحها قبل الحفظ."
+        return _review_page(request, draft=draft, level_id=level_id,
+                            group_name=group_name, note=note)
+    except AIUnavailable as exc:
+        # تدهور لطيف: نعرض النصّ الخام ليهيكله الأستاذ يدويّاً، ونرشد للقالب/المحرّك.
+        return _review_page(
+            request, draft=raw, level_id=level_id, group_name=group_name, is_json=False,
+            note=(f"{exc} — لتحويلٍ آليّ شغّل المحرّك المحلّي (Ollama) وأعِد المحاولة، "
+                  "أو استعمل «تحميل قالب Word». النصّ المستخرَج معروض أدناه للمساعدة."))
+
+
+@router.post("/quizzes/import/save")
+async def quizzes_import_save(request: Request, json_text: str = Form(""),
+                             level_id: str = Form(""), group_name: str = Form("")):
+    """يحفظ مسوّدة الاستيراد الذكيّ بعد مراجعة الأستاذ وتحريره لها."""
+    if (g := require_admin(request)):
+        return g
+    lid = int(level_id) if level_id.strip().isdigit() else None
+    if lid is None:
+        return RedirectResponse(
+            "/admin/quizzes?error=اختر المستوى قبل الحفظ.", status_code=303)
+    try:
+        payload = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        return _review_page(request, draft=json_text, level_id=level_id,
+                            group_name=group_name,
+                            note="راجِع الصيغة ثمّ احفظ.",
+                            errors=[f"JSON غير صالح: {exc}"])
+    try:
+        normalized = normalize_quiz_json(payload)
+    except QuizImportError as exc:
+        return _review_page(request, draft=json_text, level_id=level_id,
+                            group_name=group_name,
+                            note="صحّح الأخطاء التالية ثمّ احفظ:", errors=exc.errors)
+    title, n = await _save_normalized_quiz(normalized, lid, group_name)
     return RedirectResponse(
-        f"/admin/quizzes?saved=تمّ استيراد «{normalized['title']}» بـ{n} سؤالاً.",
-        status_code=303)
+        f"/admin/quizzes?saved=تمّ استيراد «{title}» بـ{n} سؤالاً.", status_code=303)
 
 
 @router.get("/quizzes/template")

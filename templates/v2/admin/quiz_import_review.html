@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+{% block title %}مراجعة الاستيراد · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">مراجعة الاستيراد الذكيّ</h2>
+  <a class="btn btn-outline-secondary" href="/admin/quizzes">→ التقاويم</a>
+</div>
+
+{% if note %}<div class="alert alert-info">{{ note }}</div>{% endif %}
+{% if errors %}
+  <div class="alert alert-danger">
+    <div class="fw-bold mb-1">أخطاء يجب إصلاحها:</div>
+    <ul class="m-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<div class="card">
+  <div class="card-body">
+    <p class="text-secondary">
+      {% if is_json %}هذه مسوّدة الأسئلة بصيغة JSON — راجِعها وصحّحها ثمّ احفظ.
+      يبقى القرار لك: أضِف، احذف، عدّل النقط والأنواع.{% else %}
+      لم يتوفّر التحويل الآليّ. النصّ المستخرَج معروض أدناه — هيكِله يدويّاً بصيغة JSON
+      (استعن بـ «تحميل قالب Word» أو <code>samples/quiz_template.json</code>) ثمّ احفظ.{% endif %}
+    </p>
+    <form method="post" action="/admin/quizzes/import/save">
+      <input type="hidden" name="level_id" value="{{ level_id }}">
+      <input type="hidden" name="group_name" value="{{ group_name }}">
+      <textarea name="json_text" dir="ltr" spellcheck="false"
+                style="width:100%;height:26rem;font-family:monospace;font-size:.85rem;
+                       white-space:pre;overflow:auto">{{ draft }}</textarea>
+      <div class="d-flex gap-2 mt-2">
+        <button class="btn btn-primary">حفظ التقويم</button>
+        <a class="btn btn-outline-secondary" href="/admin/quizzes/template">تحميل قالب Word</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
