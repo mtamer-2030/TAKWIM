@@ -404,20 +404,34 @@ async def save_quiz_draft(request: Request, quiz_id: int):
         elif not homework_available_to(quiz, student):
             return HTMLResponse("", status_code=204)
 
+        # ح-١٦: تحميل أجوبة التلميذ لكلّ الأسئلة باستعلام واحد بدل استعلام لكلّ سؤال
+        # (كان N+1؛ تحت ٤٥ هاتفاً كان يرفع زمن الحفظ إلى ثوانٍ على كاتب SQLite الوحيد).
+        qids = [q.id for q in quiz.questions]
+        existing_by_q = {
+            a.quiz_question_id: a
+            for a in (await s.execute(select(Answer).where(
+                Answer.student_id == student.id,
+                Answer.quiz_question_id.in_(qids)))).scalars()
+        }
+        changed = False
         for q in quiz.questions:
             raw = _raw_from_form(q, form)
-            existing = await s.scalar(select(Answer).where(
-                Answer.quiz_question_id == q.id, Answer.student_id == student.id))
+            existing = existing_by_q.get(q.id)
             if existing:
                 # لا نلمس جواباً مُسلَّماً نهائياً أو مصادَقاً عليه؛ المسوّدة تبقى مسوّدة.
-                if not existing.submitted and not existing.teacher_confirmed:
+                # ولا نكتب إن لم يتغيّر شيء (نتفادى قفل كتابة بلا داعٍ لكلّ حفظ دوريّ).
+                if not existing.submitted and not existing.teacher_confirmed \
+                        and existing.raw != raw:
                     existing.raw = raw
+                    changed = True
             elif not _raw_is_empty(raw):
                 # لا نُنشئ سطراً لسؤال لم يُلمس (ح-١٣)؛ فقط للأجوبة ذات المحتوى.
                 s.add(Answer(quiz_question_id=q.id, student_id=student.id,
                              raw=raw, auto_score=None,
                              teacher_confirmed=False, submitted=False))
-        await s.commit()
+                changed = True
+        if changed:
+            await s.commit()
     from datetime import datetime
     return HTMLResponse(f'حُفظ ✓ {datetime.now().strftime("%H:%M")}')
 
