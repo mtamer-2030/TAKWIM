@@ -121,6 +121,8 @@ def logout(request: Request):
 async def dashboard(request: Request):
     if (g := require_admin(request)):
         return g
+    from datetime import date, datetime, time
+    today_start = datetime.combine(date.today(), time.min)
     async with AsyncSessionLocal() as s:
         counts = {
             "students": await s.scalar(select(func.count()).select_from(Student)),
@@ -130,17 +132,65 @@ async def dashboard(request: Request):
             "submissions": await s.scalar(
                 select(func.count()).select_from(Answer).where(Answer.submitted.is_(True))),
         }
-        # توزيع التلاميذ حسب المستوى (لرسم Chart.js تجريبي)
-        rows = (await s.execute(
-            select(Level.name, func.count(Student.id))
-            .join(Student, Student.level_id == Level.id, isouter=True)
-            .group_by(Level.id))).all()
-    chart = {"labels": [r[0] for r in rows], "data": [r[1] for r in rows]}
+        # ٤-ب: بدل توزيع المستويات التجريبيّ — ما يهمّ الأستاذ اليوم فعلاً.
+        today = {
+            # جلسات فُتِحت اليوم.
+            "sessions": await s.scalar(
+                select(func.count()).select_from(QuizSession)
+                .where(QuizSession.opened_at >= today_start)),
+            # أجوبة سُلِّمت نهائياً وتنتظر مصادقة الأستاذ (لم تُحتسب في التحليل بعد).
+            "ungraded": await s.scalar(
+                select(func.count()).select_from(Answer)
+                .where(Answer.submitted.is_(True), Answer.teacher_confirmed.is_(False))),
+            # حاضرون في جلسات مفتوحة لم يُسلّموا بعد.
+            "not_submitted": await s.scalar(
+                select(func.count()).select_from(SessionStudent)
+                .join(QuizSession, QuizSession.id == SessionStudent.session_id)
+                .where(QuizSession.status == "open", SessionStudent.present.is_(True),
+                       SessionStudent.submitted_at.is_(None))),
+        }
+        # قائمة الجلسات المفتوحة الآن مع حضورها وتسليمها (روابط للمتابعة الآنية).
+        open_sessions = []
+        for sid, title, group in (await s.execute(
+                select(QuizSession.id, Quiz.title, QuizSession.group_name)
+                .join(Quiz, Quiz.id == QuizSession.quiz_id)
+                .where(QuizSession.status == "open")
+                .order_by(QuizSession.opened_at.desc()))).all():
+            present = await s.scalar(select(func.count()).select_from(SessionStudent)
+                .where(SessionStudent.session_id == sid, SessionStudent.present.is_(True)))
+            subs = await s.scalar(select(func.count()).select_from(SessionStudent)
+                .where(SessionStudent.session_id == sid,
+                       SessionStudent.submitted_at.isnot(None)))
+            open_sessions.append({"id": sid, "title": title, "group": group,
+                                  "present": present, "subs": subs})
     base = _student_url()                       # عنوان الشبكة المحلّية المكتشَف تلقائياً
     return templates.TemplateResponse(
         "admin/dashboard.html",
-        _ctx(request, counts=counts, chart=json.dumps(chart),
+        _ctx(request, counts=counts, today=today, open_sessions=open_sessions,
              lan_base=base, student_url=f"{base}/student", auto=bool(lan_url(settings.port))))
+
+
+@router.get("/open-session-badge", response_class=HTMLResponse)
+async def open_session_badge(request: Request):
+    """٤-ب: شارة «جلسة مفتوحة الآن» تظهر في كلّ صفحات اللوحة (تُحدَّث بـ HTMX).
+    ترجع فراغاً إن لم تُوجَد جلسة مفتوحة أو لم يكن الطلب مستوثَقاً (بلا إعادة توجيه)."""
+    if require_admin(request):
+        return HTMLResponse("")
+    async with AsyncSessionLocal() as s:
+        n = await s.scalar(select(func.count()).select_from(QuizSession)
+                           .where(QuizSession.status == "open"))
+        row = (await s.execute(
+            select(QuizSession.id, Quiz.title, QuizSession.group_name)
+            .join(Quiz, Quiz.id == QuizSession.quiz_id)
+            .where(QuizSession.status == "open")
+            .order_by(QuizSession.opened_at.desc()).limit(1))).first()
+    if not row:
+        return HTMLResponse("")
+    sid, title, group = row
+    more = f" (+{n - 1})" if n and n > 1 else ""
+    return templates.TemplateResponse(
+        "admin/_open_session_badge.html",
+        _ctx(request, sid=sid, title=title, group=group, more=more))
 
 
 # ═══════════════ رمز QR لربط هواتف التلاميذ ═══════════════

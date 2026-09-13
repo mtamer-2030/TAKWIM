@@ -1,0 +1,8 @@
+<a href="/admin/sessions/{{ sid }}/live" class="nav-link text-white d-flex align-items-center"
+   title="جلسة مفتوحة الآن — المتابعة الآنية">
+  <span style="display:inline-block;width:.6rem;height:.6rem;border-radius:50%;
+               background:#2fb344;margin-inline-end:.4rem;
+               box-shadow:0 0 0 rgba(47,179,68,.6);animation:ptpulse 2s infinite"></span>
+  <span>جلسة مفتوحة: {{ title }} · {{ group }}{{ more }}</span>
+</a>
+<style>@keyframes ptpulse{0%{box-shadow:0 0 0 0 rgba(47,179,68,.6)}70%{box-shadow:0 0 0 .5rem rgba(47,179,68,0)}100%{box-shadow:0 0 0 0 rgba(47,179,68,0)}}</style>
