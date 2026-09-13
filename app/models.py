@@ -380,6 +380,9 @@ class Answer(Base):
     manual_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     skill_deficits: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # القصور المرصود
     teacher_confirmed: Mapped[bool] = mapped_column(default=False)
+    # مسوّدة (حفظ تدريجيّ) أم تسليم نهائيّ؟ يميّز المُسلَّم من غيره في العدّ والتقارير
+    # وشاشة التصحيح (ح-١١/١٢/١٣). المسوّدة submitted=False، والتسليم النهائيّ True.
+    submitted: Mapped[bool] = mapped_column(default=False, server_default=sa_text("0"))
     submitted_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     student: Mapped["Student"] = relationship(back_populates="answers")

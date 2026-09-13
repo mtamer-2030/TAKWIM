@@ -324,10 +324,11 @@ async def submit_quiz(request: Request, quiz_id: int):
                 existing.raw = raw
                 existing.auto_score = graded["score"]
                 existing.teacher_confirmed = auto_confirm
+                existing.submitted = True          # تسليم نهائيّ (لا مسوّدة)
             else:
                 s.add(Answer(quiz_question_id=q.id, student_id=student.id,
                              raw=raw, auto_score=graded["score"],
-                             teacher_confirmed=auto_confirm))
+                             teacher_confirmed=auto_confirm, submitted=True))
             results.append({"q": q, "graded": graded})
         # تعليم التسليم في الجلسة (للمتابعة الآنية)
         if sess is not None and part is not None:
@@ -373,12 +374,13 @@ async def save_quiz_draft(request: Request, quiz_id: int):
             existing = await s.scalar(select(Answer).where(
                 Answer.quiz_question_id == q.id, Answer.student_id == student.id))
             if existing:
-                # لا نلمس جواباً مصادَقاً عليه (احتياط)؛ المسوّدة تبقى مسوّدة.
-                if not existing.teacher_confirmed:
+                # لا نلمس جواباً مُسلَّماً نهائياً أو مصادَقاً عليه؛ المسوّدة تبقى مسوّدة.
+                if not existing.submitted and not existing.teacher_confirmed:
                     existing.raw = raw
             else:
                 s.add(Answer(quiz_question_id=q.id, student_id=student.id,
-                             raw=raw, auto_score=None, teacher_confirmed=False))
+                             raw=raw, auto_score=None,
+                             teacher_confirmed=False, submitted=False))
         await s.commit()
     from datetime import datetime
     return HTMLResponse(f'حُفظ ✓ {datetime.now().strftime("%H:%M")}')

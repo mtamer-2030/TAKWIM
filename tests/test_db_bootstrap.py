@@ -11,6 +11,13 @@ import app.database as dbmod
 import app.db_bootstrap as boot
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+
+def _head_revision() -> str:
+    """أحدث نسخة في سلسلة الهجرات — يتتبّع تقدّم الهجرات بلا رقم مثبَّت."""
+    cfg = Config("alembic.ini"); cfg.set_main_option("script_location", "migrations")
+    return ScriptDirectory.from_config(cfg).get_current_head()
 
 
 def _point_to(tmp_path: Path, monkeypatch) -> Path:
@@ -27,7 +34,7 @@ def test_fresh_db_built_to_head(tmp_path, monkeypatch):
     assert "fresh" in msg
     c = sqlite3.connect(str(db))
     try:
-        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "b8d3f1a25c67"
+        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == _head_revision()
         assert boot._table_exists(c, "answers")
         assert not boot._table_exists(c, "quiz_answers")   # المخطّط الأحدث
     finally:
@@ -57,7 +64,7 @@ def test_legacy_create_all_db_adopted_and_migrated(tmp_path, monkeypatch):
 
     c = sqlite3.connect(str(db))
     try:
-        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "b8d3f1a25c67"
+        assert c.execute("SELECT version_num FROM alembic_version").fetchone()[0] == _head_revision()
         # الجواب القديم هاجَر إلى الجدول الموحّد.
         assert c.execute("SELECT student_id, quiz_question_id, auto_score FROM answers").fetchall() \
             == [(1, 1, 3.0)]
