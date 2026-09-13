@@ -252,10 +252,8 @@ async def take_quiz(request: Request, quiz_id: int):
 
 
 def _blocked(msg: str) -> str:
-    """صفحة رفض بسيطة للتلميذ مع رابط رجوع."""
-    return (f'<div style="font-family:sans-serif;direction:rtl;text-align:center;padding:2rem">'
-            f'<p style="font-size:1.1rem">{msg}</p>'
-            f'<a href="/student/home" style="color:#0d47a1">→ رجوع</a></div>')
+    """صفحة رفض للتلميذ عبر قالب الشِلّ (خطّ عربيّ + هوية الموقع)."""
+    return templates.get_template("student/blocked.html").render(msg=msg)
 
 
 def _raw_from_form(q: QuizQuestion, form) -> dict:
