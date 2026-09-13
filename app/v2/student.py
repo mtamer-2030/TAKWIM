@@ -332,6 +332,16 @@ async def submit_quiz(request: Request, quiz_id: int):
                     status_code=403)
         elif not homework_available_to(quiz, student):
             return HTMLResponse(_blocked("انتهت الجلسة أو أُغلقت."), status_code=403)
+        elif await s.scalar(
+                select(Answer.id)
+                .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
+                .where(QuizQuestion.quiz_id == quiz_id,
+                       Answer.student_id == student.id,
+                       Answer.submitted.is_(True)).limit(1)) is not None:
+            # ح-١١: التقويم المنزليّ محاولة واحدة كالفرض — إن سبق تسليمه نهائياً يُرفَض.
+            return HTMLResponse(
+                _blocked("لقد سلّمت هذا التقويم. لا يمكن التسليم مرّة أخرى."),
+                status_code=403)
 
         results = []
         for q in quiz.questions:
