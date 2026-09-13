@@ -125,7 +125,9 @@ async def dashboard(request: Request):
             "students": await s.scalar(select(func.count()).select_from(Student)),
             "texts": await s.scalar(select(func.count()).select_from(PhilosophicalText)),
             "essays": await s.scalar(select(func.count()).select_from(EssayExercise)),
-            "submissions": await s.scalar(select(func.count()).select_from(Answer)),
+            # الأجوبة المُسلَّمة نهائياً فقط، لا مسوّدات الحفظ التدريجي (ح-١٣).
+            "submissions": await s.scalar(
+                select(func.count()).select_from(Answer).where(Answer.submitted.is_(True))),
         }
         # توزيع التلاميذ حسب المستوى (لرسم Chart.js تجريبي)
         rows = (await s.execute(

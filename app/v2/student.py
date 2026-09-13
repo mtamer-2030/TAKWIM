@@ -184,10 +184,12 @@ async def tab_assessments(request: Request):
         homework = (await s.execute(
             select(Quiz).where(*_homework_visible_to(student))
             .order_by(Quiz.created_at.desc()))).scalars().all()
+        # «منجَز» = له تسليم نهائيّ (submitted=True)، لا مجرّد مسوّدة محفوظة (ح-١٣).
         done = set((await s.execute(
             select(QuizQuestion.quiz_id)
             .join(Answer, Answer.quiz_question_id == QuizQuestion.id)
-            .where(Answer.student_id == student.id).distinct())).scalars().all())
+            .where(Answer.student_id == student.id,
+                   Answer.submitted.is_(True)).distinct())).scalars().all())
     session_ids = {q.id for q in session_rows}
     homework = [q for q in homework if q.id not in session_ids]   # لا تكرار
     return templates.TemplateResponse(
@@ -281,6 +283,27 @@ def _raw_from_form(q: QuizQuestion, form) -> dict:
                  for ri in range(rows)]
         return {"cells": cells}
     return {}
+
+
+def _raw_is_empty(raw: dict | None) -> bool:
+    """هل الجواب الخام فارغ (لم يُلمس)؟ — لئلّا يُنشئ الحفظُ التدريجيّ سطر مسوّدة
+    لسؤال لم يُجَب أصلاً (ح-١٣: مسوّدة فارغة لا تنفخ العدّادات ولا تُعدّ إنجازاً)."""
+    if not raw:
+        return True
+    if "choice" in raw:
+        return raw.get("choice") is None
+    if "choices" in raw:
+        return not raw.get("choices")
+    if "text" in raw:
+        return not (raw.get("text") or "").strip()
+    if "assignments" in raw:
+        return all(a is None for a in raw.get("assignments") or [])
+    if "order" in raw:
+        return all(not isinstance(x, int) or x < 0 for x in raw.get("order") or [])
+    if "cells" in raw:
+        return all(not str(c).strip()
+                   for row in (raw.get("cells") or []) for c in row)
+    return not any(raw.values())
 
 
 @router.post("/quiz/{quiz_id}/submit", response_class=HTMLResponse)
@@ -377,7 +400,8 @@ async def save_quiz_draft(request: Request, quiz_id: int):
                 # لا نلمس جواباً مُسلَّماً نهائياً أو مصادَقاً عليه؛ المسوّدة تبقى مسوّدة.
                 if not existing.submitted and not existing.teacher_confirmed:
                     existing.raw = raw
-            else:
+            elif not _raw_is_empty(raw):
+                # لا نُنشئ سطراً لسؤال لم يُلمس (ح-١٣)؛ فقط للأجوبة ذات المحتوى.
                 s.add(Answer(quiz_question_id=q.id, student_id=student.id,
                              raw=raw, auto_score=None,
                              teacher_confirmed=False, submitted=False))
