@@ -10,6 +10,11 @@
     {% if not file_url %}
       <div class="pt-card muted">مرّر ملفّ PDF عبر ?file=/static/uploads/اسم_الملف.pdf</div>
     {% else %}
+      <div id="pdf-zoom" style="display:flex;align-items:center;justify-content:center;gap:.6rem;margin-bottom:.6rem">
+        <button type="button" id="zOut" aria-label="تصغير" style="min-width:44px;min-height:44px;font-size:1.2rem;border:1px solid #cddcf3;background:#fff;border-radius:.5rem">A−</button>
+        <span id="zPct" class="muted" style="min-width:3.5rem;text-align:center">100%</span>
+        <button type="button" id="zIn" aria-label="تكبير" style="min-width:44px;min-height:44px;font-size:1.2rem;border:1px solid #cddcf3;background:#fff;border-radius:.5rem">A+</button>
+      </div>
       <div id="pdf-status" class="muted" style="text-align:center">…جارٍ فتح الملفّ</div>
       <div id="pdf-pages"></div>
     {% endif %}
@@ -25,12 +30,23 @@
   (async function () {
     var status = document.getElementById("pdf-status");
     var host = document.getElementById("pdf-pages");
-    try {
-      var pdf = await pdfjsLib.getDocument("{{ file_url }}").promise;
-      status.style.display = "none";
+    // ٤-أ: تحكّم في حجم العرض (تكبير) يُحفَظ محلّياً لراحة القراءة على الهاتف.
+    var Z_KEY = "philotech_reader_zoom", Z_MIN = 0.6, Z_MAX = 2.5;
+    var zoom = 1.0;
+    try { var z = parseFloat(localStorage.getItem(Z_KEY)); if (z >= Z_MIN && z <= Z_MAX) zoom = z; } catch (e) {}
+    var zPct = document.getElementById("zPct");
+    var pdf = null, rendering = false;
+
+    async function renderAll() {
+      if (!pdf || rendering) return;
+      rendering = true;
+      host.innerHTML = "";
+      if (zPct) zPct.textContent = Math.round(zoom * 100) + "%";
+      var base = (host.clientWidth || 320);
       for (var n = 1; n <= pdf.numPages; n++) {
         var page = await pdf.getPage(n);
-        var vp = page.getViewport({ scale: (host.clientWidth || 320) / page.getViewport({scale:1}).width });
+        var scale = zoom * base / page.getViewport({ scale: 1 }).width;
+        var vp = page.getViewport({ scale: scale });
         var canvas = document.createElement("canvas");
         canvas.width = vp.width; canvas.height = vp.height;
         canvas.style.width = "100%"; canvas.style.marginBottom = "10px";
@@ -38,6 +54,21 @@
         host.appendChild(canvas);
         await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
       }
+      rendering = false;
+    }
+    function setZoom(z) {
+      zoom = Math.min(Z_MAX, Math.max(Z_MIN, z));
+      try { localStorage.setItem(Z_KEY, String(zoom)); } catch (e) {}
+      renderAll();
+    }
+    var zin = document.getElementById("zIn"), zout = document.getElementById("zOut");
+    if (zin) zin.addEventListener("click", function () { setZoom(zoom + 0.2); });
+    if (zout) zout.addEventListener("click", function () { setZoom(zoom - 0.2); });
+
+    try {
+      pdf = await pdfjsLib.getDocument("{{ file_url }}").promise;
+      status.style.display = "none";
+      await renderAll();
     } catch (e) {
       status.textContent = "تعذّر فتح الملفّ: " + e.message;
     }

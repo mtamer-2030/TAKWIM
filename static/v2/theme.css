@@ -37,7 +37,9 @@ body, .h1, .h2, .h3, .navbar, .btn, .form-control, .card-title {
 .pt-header .brand { font-weight: 700; font-size: 1.1rem; }
 .pt-main { flex: 1; padding: 1rem; }
 .pt-tabs { display: flex; background: #fff; border-top: 1px solid #e6e8ee;
-  position: sticky; bottom: 0; }
+  position: sticky; bottom: 0;
+  /* ٤-أ: هامش سفليّ يراعي شريط الإيماءات على الهواتف الحديثة (notch/home bar). */
+  padding-bottom: env(safe-area-inset-bottom, 0px); }
 .pt-tabs button { flex: 1; border: 0; background: none; padding: .8rem .3rem;
   font: inherit; color: #5b6472; cursor: pointer; font-size: .9rem; }
 .pt-tabs button.active { color: #0d47a1; font-weight: 700;

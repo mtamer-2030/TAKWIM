@@ -8,5 +8,9 @@
       · <span>{{ text.text_type.value }}</span></div>
   </a>
 {% else %}
-  <div class="pt-card muted">لا نصوص متاحة لمستواك بعد.</div>
+  <div class="pt-card muted" style="text-align:center;padding:2rem 1rem">
+    <div style="font-size:2rem;margin-bottom:.4rem">📚</div>
+    <div style="font-weight:700;margin-bottom:.2rem">لا نصوص بعد</div>
+    <div style="font-size:.9rem">سيضيف الأستاذ نصوص مستواك قريباً.</div>
+  </div>
 {% endfor %}

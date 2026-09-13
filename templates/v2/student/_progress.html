@@ -2,7 +2,9 @@
 
 {% if has_data %}
   <div class="pt-card" style="padding:.6rem">
-    <canvas id="skillRadar" height="240"></canvas>
+    <div style="position:relative;height:320px;width:100%">
+      <canvas id="skillRadar"></canvas>
+    </div>
   </div>
 
   <div style="margin-top:.8rem">
@@ -47,12 +49,17 @@
         }]
       },
       options: {
+        // ٤-أ: يملأ الحاوية بلا نسبة ثابتة، فلا تنقصف تسميات المهارات على شاشة 360px.
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: 4 },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
         scales: {
           r: {
             min: 0, max: 1,
             ticks: { display: false, stepSize: 0.25 },   // إخفاء الأرقام
-            pointLabels: { font: { size: 13 } },
+            // خطّ أصغر على الشاشات الضيّقة حتّى تتّسع الأسماء العربية الطويلة.
+            pointLabels: { font: { size: (window.innerWidth || 360) < 380 ? 10 : 13 }, padding: 4 },
             grid: { color: "#e0e0e0" }, angleLines: { color: "#e0e0e0" }
           }
         }
