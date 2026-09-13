@@ -660,9 +660,6 @@ async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> 
         return normalized["title"], len(quiz.questions)
 
 
-_REVIEW_TYPES = ("long_text", "short_text")   # أنواع مفتوحة يحرّرها الأستاذ في المراجعة
-
-
 def _review_page(request: Request, *, title: str, kind: str, questions: list[dict],
                  level_id: str, group_name: str, note: str = "",
                  errors: list[str] | None = None):
@@ -710,16 +707,87 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("قُسِّم الملفّ إلى أسئلة مفتوحة تلقائيّاً — راجِعها، عدّل النصّ والنقطة والنوع، "
-            "أضِف أو احذف، ثمّ احفظ. (لأسئلة الاختيار المتعدّد استعمل قالب Word أو JSON.)")
+    note = ("استُخرجت أسئلة الملفّ تلقائيّاً (تُكتشَف خانات الاختيار ☐ وتُفصَل خياراتها). "
+            "راجِع كلّ سؤال: عدّل نصّه ونوعه ونقطته، وفي أسئلة الاختيار "
+            "**أشّر الإجابة الصحيحة**، ثمّ احفظ. أضِف أو احذف أسئلةً وخيارات كما تشاء.")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
                         group_name=group_name, note=note)
 
 
+_REVIEW_OPEN = ("long_text", "short_text")
+_REVIEW_MCQ = ("mcq_single", "mcq_multi")
+
+
+def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
+    """يقرأ نموذج المراجعة → (العنوان، النوع، أسئلة للعرض، أخطاء).
+
+    كلّ سؤال في القائمة يحمل type/prompt/max_score وoptions/correct (للاختيار)، فتُعاد
+    الصفحة بالتحرير نفسه إن وُجد خطأ. الأخطاء تخصّ الاختيار (خيارات ناقصة/بلا صحيح)."""
+    title = (form.get("r_title") or "").strip() or "تقويم مستورد"
+    kind = form.get("r_kind") or "exercise"
+    if kind not in KINDS:
+        kind = "exercise"
+    try:
+        count = int(form.get("count") or 0)
+    except ValueError:
+        count = 0
+    questions: list[dict] = []
+    errors: list[str] = []
+    for i in range(count):
+        prompt = (form.get(f"q_prompt_{i}") or "").strip()
+        if not prompt:                          # صفّ حُذف نصّه → يُتجاهَل
+            continue
+        qtype = form.get(f"q_type_{i}") or "long_text"
+        if qtype not in _REVIEW_OPEN and qtype not in _REVIEW_MCQ:
+            qtype = "long_text"
+        try:
+            ms = max(0.0, float(form.get(f"q_score_{i}") or 4))
+        except ValueError:
+            ms = 4.0
+        q = {"type": qtype, "prompt": prompt, "max_score": ms,
+             "options": [], "correct": []}
+        if qtype in _REVIEW_MCQ:
+            try:
+                oc = int(form.get(f"q_optcount_{i}") or 0)
+            except ValueError:
+                oc = 0
+            correct_raw = {int(v) for v in form.getlist(f"q_correct_{i}") if v.isdigit()}
+            for k in range(oc):
+                opt = (form.get(f"q_opt_{i}_{k}") or "").strip()
+                if not opt:
+                    continue
+                if k in correct_raw:
+                    q["correct"].append(len(q["options"]))
+                q["options"].append(opt)
+            where = f"السؤال {len(questions) + 1}"
+            if len(q["options"]) < 2:
+                errors.append(f"{where}: سؤال الاختيار يحتاج خيارين على الأقلّ.")
+            elif not q["correct"]:
+                errors.append(f"{where}: أشّر الإجابة الصحيحة.")
+            elif qtype == "mcq_single":
+                q["correct"] = [q["correct"][0]]   # واحدة فقط للاختيار الأحاديّ
+        questions.append(q)
+    return title, kind, questions, errors
+
+
+def _to_normalized_question(q: dict) -> dict:
+    """يحوّل سؤال المراجعة إلى صيغة build_quiz (مع payload المناسب للاختيار)."""
+    qtype = q["type"]
+    payload: dict = {}
+    if qtype == "mcq_single":
+        payload = {"options": q["options"], "correct": q["correct"][0]}
+    elif qtype == "mcq_multi":
+        payload = {"options": q["options"], "correct": q["correct"]}
+    return {"type": qtype, "competency": None, "prompt": q["prompt"], "stimulus": None,
+            "max_score": float(q["max_score"]), "payload": payload,
+            "indicators": [], "penalties": [],
+            "auto_scored": qtype in QUESTION_TYPES_CLOSED}
+
+
 @router.post("/quizzes/import/save")
 async def quizzes_import_save(request: Request):
-    """يحفظ التقويم بعد مراجعة الأستاذ لأسئلته المستخرَجة وتحريرها في النموذج."""
+    """يحفظ التقويم بعد مراجعة الأستاذ لأسئلته المستخرَجة وتحريرها (وتأشير الصواب)."""
     if (g := require_admin(request)):
         return g
     form = await request.form()
@@ -730,42 +798,19 @@ async def quizzes_import_save(request: Request):
         return RedirectResponse(
             "/admin/quizzes?error=اختر المستوى قبل الحفظ.", status_code=303)
 
-    title = (form.get("r_title") or "").strip() or "تقويم مستورد"
-    kind = form.get("r_kind") or "exercise"
-    if kind not in KINDS:
-        kind = "exercise"
-    try:
-        count = int(form.get("count") or 0)
-    except ValueError:
-        count = 0
-    questions = []
-    for i in range(count):
-        prompt = (form.get(f"q_prompt_{i}") or "").strip()
-        if not prompt:                          # صفّ حُذف نصّه → يُتجاهَل
-            continue
-        qtype = form.get(f"q_type_{i}") or "long_text"
-        if qtype not in _REVIEW_TYPES:
-            qtype = "long_text"
-        try:
-            ms = float(form.get(f"q_score_{i}") or 4)
-        except ValueError:
-            ms = 4.0
-        questions.append({
-            "type": qtype, "competency": None, "prompt": prompt, "stimulus": None,
-            "max_score": max(0.0, ms), "payload": {},
-            "indicators": [], "penalties": [], "auto_scored": False,
-        })
-
+    title, kind, questions, errors = _parse_review_form(form)
     if not questions:
-        # نعيد صفحة المراجعة بصفّ فارغ واحد ورسالة، بدل رسالة خطأ مبهمة.
-        return _review_page(
-            request, title=title, kind=kind,
-            questions=[{"type": "long_text", "prompt": "", "max_score": 4.0}],
-            level_id=level_id, group_name=group_name,
-            errors=["أضِف نصّ سؤال واحد على الأقلّ قبل الحفظ."])
+        errors.append("أضِف نصّ سؤال واحد على الأقلّ قبل الحفظ.")
+    if errors:
+        if not questions:
+            questions = [{"type": "long_text", "prompt": "", "max_score": 4.0,
+                          "options": [], "correct": []}]
+        return _review_page(request, title=title, kind=kind, questions=questions,
+                            level_id=level_id, group_name=group_name, errors=errors)
 
     normalized = {"title": title, "kind": kind, "level": None, "unit": None,
-                  "concept": None, "stimuli": [], "questions": questions}
+                  "concept": None, "stimuli": [],
+                  "questions": [_to_normalized_question(q) for q in questions]}
     saved_title, n = await _save_normalized_quiz(normalized, lid, group_name)
     return RedirectResponse(
         f"/admin/quizzes?saved=تمّ استيراد «{saved_title}» بـ{n} سؤالاً.", status_code=303)

@@ -1,6 +1,11 @@
 {% extends "admin/base.html" %}
 {% block title %}مراجعة الاستيراد · PHILO-TECH{% endblock %}
 {% block content %}
+<style>
+  .optrow { display:flex; align-items:center; gap:.5rem; margin-bottom:.35rem; }
+  .optrow .opttext { flex:1; }
+  .qrow .opts { border-inline-start:3px solid #cddcf3; padding-inline-start:.7rem; margin-top:.5rem; }
+</style>
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="h2 m-0">مراجعة التقويم قبل الحفظ</h2>
   <a class="btn btn-outline-secondary" href="/admin/quizzes">→ التقاويم</a>
@@ -37,16 +42,31 @@
     <div class="card mb-2 qrow"><div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-1">
         <span class="text-secondary qnum">سؤال {{ loop.index }}</span>
-        <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف السؤال</button>
       </div>
       <textarea class="form-control mb-2 qp" rows="2" placeholder="نصّ السؤال">{{ q.prompt }}</textarea>
-      <div class="row g-2">
-        <div class="col-md-8"><select class="form-select qt">
-          <option value="long_text" {{ 'selected' if q.type!='short_text' }}>مقال / جواب مطوّل</option>
+      <div class="row g-2 mb-1">
+        <div class="col-md-8"><select class="form-select qt" onchange="onType(this)">
+          <option value="long_text"  {{ 'selected' if q.type=='long_text' }}>مقال / جواب مطوّل</option>
           <option value="short_text" {{ 'selected' if q.type=='short_text' }}>جواب قصير</option>
+          <option value="mcq_single" {{ 'selected' if q.type=='mcq_single' }}>اختيار واحد صحيح</option>
+          <option value="mcq_multi"  {{ 'selected' if q.type=='mcq_multi' }}>اختيار متعدّد الصواب</option>
         </select></div>
         <div class="col-md-4"><input type="number" step="0.25" min="0"
           class="form-control qs" value="{{ q.max_score }}" placeholder="النقطة"></div>
+      </div>
+      <div class="opts" {{ 'hidden' if q.type not in ['mcq_single','mcq_multi'] }}>
+        <div class="text-secondary mb-1" style="font-size:.85rem">الخيارات — أشّر الصحيح ✓</div>
+        <div class="optlist">
+          {% for opt in q.options %}
+          <div class="optrow">
+            <input type="checkbox" class="optcorrect" {{ 'checked' if loop.index0 in q.correct }}>
+            <input type="text" class="form-control opttext" value="{{ opt }}">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmOpt(this)">×</button>
+          </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="addOpt(this)">+ خيار</button>
       </div>
     </div></div>
     {% endfor %}
@@ -59,25 +79,75 @@
   </div>
 </form>
 
+<template id="optTpl">
+  <div class="optrow">
+    <input type="checkbox" class="optcorrect">
+    <input type="text" class="form-control opttext" placeholder="نصّ الخيار">
+    <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmOpt(this)">×</button>
+  </div>
+</template>
 <template id="rowTpl">
   <div class="card mb-2 qrow"><div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-1">
       <span class="text-secondary qnum">سؤال</span>
-      <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف السؤال</button>
     </div>
     <textarea class="form-control mb-2 qp" rows="2" placeholder="نصّ السؤال"></textarea>
-    <div class="row g-2">
-      <div class="col-md-8"><select class="form-select qt">
+    <div class="row g-2 mb-1">
+      <div class="col-md-8"><select class="form-select qt" onchange="onType(this)">
         <option value="long_text">مقال / جواب مطوّل</option>
         <option value="short_text">جواب قصير</option>
+        <option value="mcq_single">اختيار واحد صحيح</option>
+        <option value="mcq_multi">اختيار متعدّد الصواب</option>
       </select></div>
       <div class="col-md-4"><input type="number" step="0.25" min="0"
         class="form-control qs" value="4" placeholder="النقطة"></div>
+    </div>
+    <div class="opts" hidden>
+      <div class="text-secondary mb-1" style="font-size:.85rem">الخيارات — أشّر الصحيح ✓</div>
+      <div class="optlist"></div>
+      <button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="addOpt(this)">+ خيار</button>
     </div>
   </div></div>
 </template>
 
 <script>
+function isMcq(t) { return t === 'mcq_single' || t === 'mcq_multi'; }
+
+function onType(sel) {
+  var row = sel.closest('.qrow');
+  var opts = row.querySelector('.opts');
+  if (isMcq(sel.value)) {
+    opts.hidden = false;
+    var list = opts.querySelector('.optlist');
+    while (list.querySelectorAll('.optrow').length < 2) addOptTo(list);   // خياران على الأقلّ
+  } else {
+    opts.hidden = true;
+  }
+  enforceSingle(row);
+}
+
+function enforceSingle(row) {
+  // في «اختيار واحد صحيح»: تأشير خيار يلغي الباقي.
+  var single = row.querySelector('.qt').value === 'mcq_single';
+  row.querySelectorAll('.optcorrect').forEach(function (cb) {
+    cb.onclick = single ? function () {
+      row.querySelectorAll('.optcorrect').forEach(function (o) { if (o !== cb) o.checked = false; });
+    } : null;
+  });
+}
+
+function addOptTo(list) {
+  list.appendChild(document.getElementById('optTpl').content.cloneNode(true));
+}
+function addOpt(btn) { addOptTo(btn.closest('.opts').querySelector('.optlist')); }
+function rmOpt(btn) { btn.closest('.optrow').remove(); }
+function rmRow(btn) { btn.closest('.qrow').remove(); renumber(); }
+function addRow() {
+  document.getElementById('qrows').appendChild(document.getElementById('rowTpl').content.cloneNode(true));
+  renumber();
+}
+
 function renumber() {
   var rows = document.querySelectorAll('#qrows .qrow');
   rows.forEach(function (row, i) {
@@ -85,16 +155,28 @@ function renumber() {
     row.querySelector('.qp').name = 'q_prompt_' + i;
     row.querySelector('.qt').name = 'q_type_' + i;
     row.querySelector('.qs').name = 'q_score_' + i;
+    var mcq = isMcq(row.querySelector('.qt').value);
+    var optrows = row.querySelectorAll('.optrow');
+    optrows.forEach(function (o, k) {
+      var text = o.querySelector('.opttext');
+      var cb = o.querySelector('.optcorrect');
+      text.name = mcq ? ('q_opt_' + i + '_' + k) : '';
+      cb.name = mcq ? ('q_correct_' + i) : '';
+      cb.value = k;
+    });
+    // حقل مخفيّ لعدد الخيارات (للاختيار فقط).
+    var hid = row.querySelector('.optcount');
+    if (mcq) {
+      if (!hid) { hid = document.createElement('input'); hid.type = 'hidden';
+                  hid.className = 'optcount'; row.appendChild(hid); }
+      hid.name = 'q_optcount_' + i; hid.value = optrows.length;
+    } else if (hid) { hid.name = ''; }
+    enforceSingle(row);
   });
   document.getElementById('qcount').value = rows.length;
 }
-function rmRow(btn) { btn.closest('.qrow').remove(); renumber(); }
-function addRow() {
-  var tpl = document.getElementById('rowTpl');
-  document.getElementById('qrows').appendChild(tpl.content.cloneNode(true));
-  renumber();
-}
 document.getElementById('reviewForm').addEventListener('submit', renumber);
-renumber();   // ترقيم أوليّ يربط أسماء الحقول
+document.querySelectorAll('#qrows .qrow').forEach(function (r) { enforceSingle(r); });
+renumber();
 </script>
 {% endblock %}

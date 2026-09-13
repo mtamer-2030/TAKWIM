@@ -33,67 +33,105 @@ def normalize_quiz_json(data) -> dict:
 
 import re as _re
 
-# بداية سؤال: رقم (عربيّ/لاتينيّ) أو «السؤال/س» متبوعاً بفاصل، أو نقطة تعداد.
-_Q_START = _re.compile(
-    r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s+")
+# علامات خانات الاختيار: فارغة (خيار) ومملوءة (خيار صحيح مؤشَّر في المصدر).
+_BOX_EMPTY = "☐□▢◻◽⬜❑❒⧀○◯⭘⎔❏❎◼◾⁃"
+_BOX_CHECKED = "☑☒■◾✅✔✘●◉"
+_BOX_ANY = _re.compile("[" + _BOX_EMPTY + _BOX_CHECKED + "]")
+_CHECKED_SET = set(_BOX_CHECKED)
 _LEAD = _re.compile(r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s*")
+
+# كلمات ترويسة الورقة (مستوى/مادّة/مؤسّسة…) — أسطرها ليست أسئلة.
+_HEADER_KW = ("المستوى", "المادة", "المادّة", "المدة", "المدّة", "المؤسسة", "المؤسّسة",
+              "الأكاديمية", "الأكاديميّة", "المديرية", "المديريّة", "النيابة", "الثانوية",
+              "الثانويّة", "الإعدادية", "التأهيلية", "الأسدس", "الدورة", "السنة الدراسية",
+              "رقم الامتحان", "رقم التلميذ", "الاسم الكامل", "النقطة النهائية", "معامل")
+_ID_HEADER = _re.compile(r"^\s*(?:الاسم|القسم|النسب|الرقم|رقم التلميذ|التوقيع)\s*[:：]")
+
+
+def _is_header(line: str) -> bool:
+    """سطر ترويسة إداريّة (مستوى/مادّة/مدّة/اسم…) لا يُعدّ سؤالاً."""
+    if _ID_HEADER.match(line):
+        return True
+    hits = sum(1 for kw in _HEADER_KW if kw in line)
+    return hits >= 2 or (hits >= 1 and "|" in line)
+
+
+def _mcq_from_text(prompt_part: str, opts_part: str) -> dict | None:
+    """يبني سؤال اختيار من نصّ فيه علامات خانات: النصّ قبل أوّل علامة سؤالٌ،
+    وما بين العلامات خياراتٌ. العلامة المملوءة (☑) تُعلَّم إجابةً صحيحة."""
+    marks = list(_BOX_ANY.finditer(opts_part))
+    if len(marks) < 2:
+        return None
+    options, correct = [], []
+    for k, m in enumerate(marks):
+        start = m.end()
+        end = marks[k + 1].start() if k + 1 < len(marks) else len(opts_part)
+        opt = opts_part[start:end].strip(" .،؛|-–—\t")
+        if not opt:
+            continue
+        if m.group() in _CHECKED_SET:
+            correct.append(len(options))
+        options.append(opt)
+    if len(options) < 2:
+        return None
+    prompt = prompt_part.strip().rstrip(":：").strip() or "اختر"
+    # «كلّ/جميع/التي» تلمّح إلى تعدّد الصواب؛ وإلّا فاختيارٌ واحد.
+    multi = any(w in prompt for w in ("كل ", "كلّ", "جميع", "التي", "ما يلي مما"))
+    qtype = "mcq_multi" if (multi or len(correct) > 1) else "mcq_single"
+    return {"type": qtype, "competency": None, "prompt": prompt, "stimulus": None,
+            "max_score": 2.0, "options": options, "correct": correct,
+            "payload": {}, "indicators": [], "penalties": [], "auto_scored": False}
+
+
+def _open_q(prompt: str) -> dict:
+    return {"type": "long_text", "competency": None, "prompt": prompt, "stimulus": None,
+            "max_score": 4.0, "options": [], "correct": [], "payload": {},
+            "indicators": [], "penalties": [], "auto_scored": False}
 
 
 def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
-    """محلّل متسامح: يحوّل نصّ تمرين/فرض عاديّاً إلى تقويم أسئلة مفتوحة مباشرةً.
+    """محلّل متسامح يقينيّ: يحوّل نصّ فرض/تمرين عاديّاً إلى أسئلة مباشرةً.
 
-    لا يتطلّب قالباً ولا ذكاءً اصطناعيّاً — يعمل دائماً وبلا اتصال. يقسّم النصّ إلى
-    أسئلة بالعلامات الشائعة (ترقيم، «السؤال/س»، تعداد، أو أسطر تنتهي بـ«؟»)، ويجعل
-    كلّ سؤال مفتوحاً (long_text) بلا مهارة محدّدة — يراجعها الأستاذ ويضبط النقط
-    والأنواع في شاشة المراجعة قبل الحفظ. اقتراحٌ يقينيّ لا حكم."""
-    raw_lines = [ln.strip() for ln in (text or "").splitlines()]
-    lines = [ln for ln in raw_lines if ln]
+    يتخطّى أسطر الترويسة الإداريّة، ويكتشف أسئلة الاختيار المتعدّد بعلامات الخانات
+    (☐/☑) فيفصل نصّ السؤال عن خياراته (سواء في السطر نفسه أو في أسطر تالية)، ويجعل
+    البقيّة أسئلة مفتوحة. لا يعرف الإجابة الصحيحة إن لم تكن مؤشَّرة في المصدر — يؤشّرها
+    الأستاذ في شاشة المراجعة. بلا ذكاء اصطناعيّ وبلا اتصال؛ يعمل دائماً."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     title = (title_hint or "").strip() or "تقويم مستورد"
 
-    # إن كان أوّل سطر عنواناً (قصير، لا يبدو سؤالاً) وتلته أسطر أخرى، نعتمده عنواناً.
-    if len(lines) > 1 and not _Q_START.match(lines[0]) and not lines[0].endswith("؟") \
-            and len(lines[0]) <= 80:
-        title = lines[0]
-        lines = lines[1:]
-
-    blocks: list[list[str]] = []
-    cur: list[str] = []
-    for ln in lines:
-        if _Q_START.match(ln):
-            if cur:
-                blocks.append(cur)
-            cur = [ln]
-        elif cur:
-            cur.append(ln)
-        else:
-            cur = [ln]
-    if cur:
-        blocks.append(cur)
-
-    # لا علامات ترقيم؟ نقسّم بالأسطر المنتهية بـ«؟»؛ وإلّا نجعل النصّ كلّه سؤالاً.
-    if len(blocks) <= 1 and lines:
-        q_lines = [ln for ln in lines if ln.endswith("؟")]
-        if len(q_lines) >= 2:
-            blocks = [[ln] for ln in lines if ln.endswith("؟")]
-
-    questions = []
-    for b in blocks:
-        prompt = " ".join(b).strip()
-        prompt = _LEAD.sub("", prompt).strip()      # إزالة علامة البداية
-        if not prompt:
+    questions: list[dict] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        ln = lines[i]
+        if _is_header(ln):
+            i += 1
             continue
-        questions.append({
-            "type": "long_text", "competency": None, "prompt": prompt,
-            "stimulus": None, "max_score": 4.0, "payload": {},
-            "indicators": [], "penalties": [], "auto_scored": False,
-        })
-    # ضمان: نصّ غير فارغ لكن بلا أسئلة مكتشَفة → سؤال واحد بكامل النصّ.
+        boxes = list(_BOX_ANY.finditer(ln))
+        if len(boxes) >= 2:
+            # خيارات مضمَّنة في السطر نفسه: ما قبل أوّل علامة سؤالٌ، والباقي خيارات.
+            q = _mcq_from_text(ln[:boxes[0].start()], ln[boxes[0].start():])
+            questions.append(q or _open_q(_LEAD.sub("", ln).strip()))
+            i += 1
+            continue
+        # نصّ سؤال ربّما تلته خيارات في أسطر مستقلّة تبدأ بعلامة خانة.
+        j = i + 1
+        opt_lines = []
+        while j < n and _BOX_ANY.match(lines[j]):
+            opt_lines.append(lines[j])
+            j += 1
+        if len(opt_lines) >= 2:
+            q = _mcq_from_text(ln, " ".join(opt_lines))
+            questions.append(q or _open_q(_LEAD.sub("", ln).strip()))
+            i = j
+            continue
+        prompt = _LEAD.sub("", ln).strip()
+        if prompt:
+            questions.append(_open_q(prompt))
+        i += 1
+
     if not questions and lines:
-        questions.append({
-            "type": "long_text", "competency": None,
-            "prompt": " ".join(lines).strip(), "stimulus": None, "max_score": 4.0,
-            "payload": {}, "indicators": [], "penalties": [], "auto_scored": False,
-        })
+        questions.append(_open_q(" ".join(lines).strip()))
     return {"title": title, "kind": "exercise", "level": None, "unit": None,
             "concept": None, "stimuli": [], "questions": questions}
 
