@@ -61,9 +61,10 @@ def test_heuristic_detects_heading_passage_and_separator():
            "1- ما موضوع النص؟\n☐ اللغة\n☐ الطبيعة")
     q = heuristic_quiz_from_text(txt)
     types = [x["type"] for x in q["questions"]]
+    prompts = " ".join(x["prompt"] for x in q["questions"])
     assert "heading" in types                 # «فهم النص (9 نقط)»
     assert "passage" in types                 # الفقرة الطويلة تُعرَض
-    assert "skip" in types                    # سطر «____» يُحذف
+    assert "___" not in prompts               # سطر «____» يُحذف تماماً
     assert "mcq_single" in types
     mcq1 = next(x for x in q["questions"] if x["type"] == "mcq_single")
     assert len(mcq1["options"]) == 2 and mcq1["correct"] == []   # الصواب غير مؤشَّر بعد

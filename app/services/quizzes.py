@@ -97,14 +97,31 @@ def _as(prompt: str, qtype: str) -> dict:
     return q
 
 
-_SEP_RE = _re.compile(r"^[\s_\-–—=.·•*─-╿]{4,}$")   # سطر فاصل (خطوط/نقاط)
+_SEP_RE = _re.compile(r"^[\s_\-–—=.·•*─-╿•]{4,}$")  # فاصل/سطر إجابة (نقاط/خطوط)
 _NUM_START = _re.compile(r"^\s*(?:\d+|[٠-٩]+)\s*[).:\-–—]")   # يبدأ بترقيم (سؤال/قسم)
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+_POINTS_RE = _re.compile(r"\(\s*([\d.,٠-٩]+)\s*(?:نقاط|نقطة|نقط|ن)\s*\)")
+
+
+def _extract_points(text: str):
+    """يفصل «(3 نقاط)» عن نصّ السؤال، ويعيد (النصّ بلا النقطة، السقف أو None)."""
+    m = _POINTS_RE.search(text)
+    if not m:
+        return text.strip(), None
+    num = m.group(1).translate(_AR_DIGITS).replace(",", ".")
+    try:
+        val = float(num)
+    except ValueError:
+        return text.strip(), None
+    clean = (text[:m.start()] + " " + text[m.end():]).strip(" :：.-").strip()
+    return clean or text.strip(), val
 
 
 # عناوين أقسام شائعة في الفروض المغربيّة (لا أسئلة).
 _SECTION_RE = _re.compile(
     r"^\s*(?:أولا|ثانيا|ثالثا|رابعا|خامسا|الجزء|القسم|المحور|المجال|التمرين"
-    r"|الوضعية|المطلوب|الموضوع|معارف|المهارات|القدرات|الكفايات|أسئلة|الأسئلة)\b")
+    r"|الوضعية|المطلوب|الموضوع|معارف|المهارات|القدرات|الكفايات|أسئلة|الأسئلة"
+    r"|دراسة\s+نص|النص\s+الفلسفي|القولة|الإنشاء|الإنشاء\s+الفلسفي|تحليل\s+نص)\b")
 # أفعال/أدوات تبدأ بها الأسئلة الحقيقيّة (فلا تُعدّ عناوين).
 _Q_VERB = _re.compile(
     r"^\s*(?:اشرح|حلّ?ل|عرّ?ف|بيّ?ن|ناقش|أجب|استخرج|قارن|علّ?ل|اذكر|صنّ?ف|رتّ?ب"
@@ -142,7 +159,13 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     (☐/☑) فيفصل نصّ السؤال عن خياراته (سواء في السطر نفسه أو في أسطر تالية)، ويجعل
     البقيّة أسئلة مفتوحة. لا يعرف الإجابة الصحيحة إن لم تكن مؤشَّرة في المصدر — يؤشّرها
     الأستاذ في شاشة المراجعة. بلا ذكاء اصطناعيّ وبلا اتصال؛ يعمل دائماً."""
-    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    # نقصّ ذيل أسطر الإجابة (سلسلة نقاط/خطوط ≥4) من كلّ سطر، فتنظُف السقالات
+    # («*اسم البنية: .......» → «*اسم البنية:») وتُحذف أسطر الإجابة الفارغة كلّيّاً.
+    lines = []
+    for ln in (text or "").splitlines():
+        ln = _re.sub(r"[.․‥…_ـ]{4,}.*$", "", ln).strip(" *•-–—\t")
+        if ln:
+            lines.append(ln)
     title = (title_hint or "").strip() or "تقويم مستورد"
 
     questions: list[dict] = []
@@ -152,13 +175,13 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
         ln = lines[i]
         boxes = list(_BOX_ANY.finditer(ln))
         if not boxes:
-            # عناصر عرضٍ لا أسئلة: فاصل يُحذف؛ ترويسة/عنوان يُعرَض كعنوان؛ نصّ طويل يُعرَض.
+            # سطر إجابة/فاصل (نقاط أو خطوط فقط) → يُحذف تماماً (ليس سؤالاً ولا يُعرَض).
             if _SEP_RE.match(ln):
-                questions.append(_as(ln, "skip"))
                 i += 1
                 continue
             if _is_header(ln) or _is_section_title(ln):
-                questions.append(_as(_LEAD.sub("", ln).strip(), "heading"))
+                clean, _ = _extract_points(_LEAD.sub("", ln).strip())
+                questions.append(_as(clean, "heading"))
                 i += 1
                 continue
             if _is_passage(ln):
@@ -182,9 +205,12 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
             questions.append(q or _open_q(_LEAD.sub("", ln).strip()))
             i = j
             continue
-        prompt = _LEAD.sub("", ln).strip()
+        prompt, pts = _extract_points(_LEAD.sub("", ln).strip())
         if prompt:
-            questions.append(_open_q(prompt))
+            oq = _open_q(prompt)
+            if pts is not None:
+                oq["max_score"] = pts            # «(3 نقاط)» → سقف السؤال
+            questions.append(oq)
         i += 1
 
     if not questions and lines:
