@@ -18,7 +18,20 @@
     {% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
 {% endif %}
 
+{% if raw_text %}
+<form method="post" action="/admin/quizzes/import/ai" class="mb-3"
+      onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='… جارٍ التحليل بالمحرّك المحلّي (قد يستغرق دقيقة)';">
+  <input type="hidden" name="raw_text" value="{{ raw_text }}">
+  <input type="hidden" name="level_id" value="{{ level_id }}">
+  <input type="hidden" name="group_name" value="{{ group_name }}">
+  <button class="btn btn-outline-primary" {% if not ai_online %}disabled title="شغّل Ollama"{% endif %}>
+    ✨ استخراج ذكيّ بالمحرّك المحلّي (Ollama){% if not ai_online %} — المحرّك غير مشغّل{% endif %}</button>
+  <span class="text-secondary" style="font-size:.85rem">يعيد هيكلة الفرض بذكاء (يتجاهل تعديلاتك الحاليّة).</span>
+</form>
+{% endif %}
+
 <form method="post" action="/admin/quizzes/import/save" id="reviewForm">
+  <input type="hidden" name="raw_text" value="{{ raw_text }}">
   <input type="hidden" name="level_id" value="{{ level_id }}">
   <input type="hidden" name="group_name" value="{{ group_name }}">
   <input type="hidden" name="count" id="qcount" value="{{ questions|length }}">

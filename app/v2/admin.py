@@ -15,6 +15,7 @@ from sqlalchemy import delete as sa_delete, func, select
 
 from ..ai_feedback import (
     AIUnavailable,
+    extract_quiz_json,
     generate_class_plan,
     generate_student_plan,
     ollama_available,
@@ -662,12 +663,59 @@ async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> 
 
 def _review_page(request: Request, *, title: str, kind: str, questions: list[dict],
                  level_id: str, group_name: str, note: str = "",
-                 errors: list[str] | None = None):
+                 errors: list[str] | None = None, raw_text: str = "",
+                 ai_online: bool | None = None):
     """صفحة مراجعة الاستيراد: عنوان + نوع + أسئلة قابلة للتحرير (بلا JSON)."""
+    if ai_online is None:
+        ai_online = ollama_available()
     return templates.TemplateResponse(
         "admin/quiz_import_review.html",
         _ctx(request, r_title=title, r_kind=kind, questions=questions,
-             level_id=level_id, group_name=group_name, note=note, errors=errors or []))
+             level_id=level_id, group_name=group_name, note=note,
+             errors=errors or [], raw_text=raw_text, ai_online=ai_online))
+
+
+_AI_TYPE_MAP = {"heading": "heading", "passage": "passage",
+                "mcq_single": "mcq_single", "mcq_multi": "mcq_multi",
+                "long_text": "long_text", "short_text": "short_text",
+                "essay": "long_text", "mcq": "mcq_single", "text": "passage",
+                "title": "heading"}
+
+
+def _ai_json_to_questions(raw_json: str) -> tuple[str, list[dict]]:
+    """يحوّل مخرَج المحرّك (JSON) إلى (عنوان، أسئلة للمراجعة). متسامح مع نقص المخطّط."""
+    data = json.loads(raw_json)
+    if isinstance(data, list):
+        data = {"questions": data}
+    title = str(data.get("title") or "").strip() or "تقويم مستورد"
+    out: list[dict] = []
+    for q in (data.get("questions") or []):
+        if not isinstance(q, dict):
+            continue
+        prompt = str(q.get("prompt") or q.get("text") or q.get("question") or "").strip()
+        if not prompt:
+            continue
+        qtype = _AI_TYPE_MAP.get(str(q.get("type") or "").strip().lower(), "long_text")
+        try:
+            ms = max(0.0, float(q.get("max_score") or (0 if qtype in DISPLAY_TYPES else 4)))
+        except (TypeError, ValueError):
+            ms = 0.0 if qtype in DISPLAY_TYPES else 4.0
+        item = {"type": qtype, "prompt": prompt, "max_score": ms,
+                "options": [], "correct": []}
+        if qtype in ("mcq_single", "mcq_multi"):
+            opts = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+            raw_correct = q.get("correct")
+            if isinstance(raw_correct, int):
+                raw_correct = [raw_correct]
+            correct = [c for c in (raw_correct or [])
+                       if isinstance(c, int) and 0 <= c < len(opts)]
+            if len(opts) < 2:                    # اختيار بلا خيارات كافية → مفتوح
+                item["type"] = "long_text"
+            else:
+                item["options"] = opts
+                item["correct"] = correct[:1] if qtype == "mcq_single" else correct
+        out.append(item)
+    return title, out
 
 
 @router.post("/quizzes/import")
@@ -707,13 +755,41 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("استُخرج الملفّ تلقائيّاً: تُكتشَف خانات الاختيار ☐ وتُفصَل خياراتها، وتُميَّز "
-            "العناوين والنصوص. راجِع كلّ عنصر: العنوان والنصّ يُعرَضان للتلميذ بلا تصحيح؛ "
-            "في أسئلة الاختيار **أشّر الإجابة الصحيحة**؛ و«تجاهُل» يحذف السطر. عدّل النصّ "
-            "والنوع والنقطة، وأضِف أو احذف كما تشاء، ثمّ احفظ.")
+    note = ("استُخرج الملفّ تلقائيّاً: تُكتشَف خانات الاختيار ☐، وتُميَّز العناوين والنصوص، "
+            "وتُحذف أسطر الإجابة، وتُستخرَج النقط. راجِع كلّ عنصر؛ في أسئلة الاختيار "
+            "**أشّر الإجابة الصحيحة**. لهيكلة أذكى جرّب زرّ «استخراج ذكيّ (Ollama)».")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
-                        group_name=group_name, note=note)
+                        group_name=group_name, note=note, raw_text=raw)
+
+
+@router.post("/quizzes/import/ai")
+async def quizzes_import_ai(request: Request):
+    """استخراج ذكيّ بالمحرّك المحلّي: يعيد هيكلة نصّ الفرض ويعرضها للمراجعة.
+    تدهور لطيف: إن أُغلق المحرّك يبقى التحليل القاعديّ ويُعرَض سبب التعذّر."""
+    if (g := require_admin(request)):
+        return g
+    form = await request.form()
+    raw = form.get("raw_text") or ""
+    level_id = (form.get("level_id") or "").strip()
+    group_name = form.get("group_name") or ""
+    try:
+        title, questions = _ai_json_to_questions(
+            await asyncio.to_thread(extract_quiz_json, raw))
+        if not questions:
+            raise AIUnavailable("لم يُرجِع المحرّك أسئلة صالحة.")
+        note = "هيكلة المحرّك المحلّي — راجِعها وصحّحها وأشّر الصواب قبل الحفظ."
+        return _review_page(request, title=title, kind="exercise", questions=questions,
+                            level_id=level_id, group_name=group_name, note=note,
+                            raw_text=raw)
+    except (AIUnavailable, json.JSONDecodeError, ValueError) as exc:
+        # نرجع للتحليل القاعديّ مع رسالة واضحة (لا نفقد عمل الأستاذ).
+        parsed = heuristic_quiz_from_text(raw, title_hint="")
+        return _review_page(
+            request, title=parsed["title"], kind="exercise",
+            questions=parsed["questions"], level_id=level_id, group_name=group_name,
+            raw_text=raw, errors=[f"تعذّر الاستخراج الذكيّ: {exc}"],
+            note="عُرِض التحليل القاعديّ. شغّل Ollama بنموذج مناسب ثمّ أعِد المحاولة.")
 
 
 _REVIEW_OPEN = ("long_text", "short_text")
@@ -813,7 +889,8 @@ async def quizzes_import_save(request: Request):
             questions = [{"type": "long_text", "prompt": "", "max_score": 4.0,
                           "options": [], "correct": []}]
         return _review_page(request, title=title, kind=kind, questions=questions,
-                            level_id=level_id, group_name=group_name, errors=errors)
+                            level_id=level_id, group_name=group_name, errors=errors,
+                            raw_text=form.get("raw_text") or "")
 
     normalized = {"title": title, "kind": kind, "level": None, "unit": None,
                   "concept": None, "stimuli": [],

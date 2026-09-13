@@ -231,6 +231,64 @@ def test_save_mcq_without_correct_returns_error(monkeypatch):
     assert captured["name"] == "admin/quiz_import_review.html" and captured["errors"]
 
 
+def test_ai_json_maps_to_review_questions():
+    from app.v2.admin import _ai_json_to_questions
+    js = ('{"title":"فرض","questions":['
+          '{"type":"passage","prompt":"نصّ فلسفيّ طويل"},'
+          '{"type":"long_text","prompt":"استخرج الأطروحة","max_score":3},'
+          '{"type":"mcq_single","prompt":"العاصمة","options":["فاس","الرباط"],"correct":1}]}')
+    title, qs = _ai_json_to_questions(js)
+    assert title == "فرض" and len(qs) == 3
+    assert qs[0]["type"] == "passage"
+    assert qs[1]["type"] == "long_text" and qs[1]["max_score"] == 3.0
+    assert qs[2]["type"] == "mcq_single" and qs[2]["options"] == ["فاس", "الرباط"] \
+        and qs[2]["correct"] == [1]
+
+
+def test_ai_route_renders_structured_review(monkeypatch):
+    prep = _setup(monkeypatch)
+    captured = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        monkeypatch.setattr(admin_mod, "extract_quiz_json",
+                            lambda raw: '{"title":"ف","questions":[{"type":"long_text","prompt":"حلّل","max_score":6}]}')
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        form = FormData([("raw_text", "نصّ الفرض"), ("level_id", str(lid)), ("group_name", "")])
+        await admin_mod.quizzes_import_ai(_FormReq(form))
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert captured["name"] == "admin/quiz_import_review.html"
+    assert captured["questions"][0]["max_score"] == 6.0
+
+
+def test_ai_route_falls_back_when_engine_off(monkeypatch):
+    prep = _setup(monkeypatch)
+    captured = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        from app.ai_feedback import AIUnavailable
+
+        def _boom(raw):
+            raise AIUnavailable("مغلق")
+        monkeypatch.setattr(admin_mod, "extract_quiz_json", _boom)
+        monkeypatch.setattr(admin_mod, "ollama_available", lambda: False)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        form = FormData([("raw_text", "1- سؤال أوّل\n2- سؤال ثانٍ"),
+                         ("level_id", str(lid)), ("group_name", "")])
+        await admin_mod.quizzes_import_ai(_FormReq(form))
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert captured["name"] == "admin/quiz_import_review.html"
+    assert captured["errors"]                     # رسالة تعذّر واضحة
+    assert captured["questions"]                  # التحليل القاعديّ بقي
+
+
 def test_save_open_question(monkeypatch):
     prep = _setup(monkeypatch)
 
