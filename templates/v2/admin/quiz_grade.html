@@ -36,7 +36,8 @@
       <tbody>
       {% for a in item.answers %}
         <tr>
-          <td>{{ a.student.full_name }}</td>
+          <td>{{ a.student.full_name }}
+            {% if not a.submitted %}<span class="badge bg-yellow-lt">مسوّدة لم تُسلَّم</span>{% endif %}</td>
           <td style="white-space:pre-wrap;max-width:32rem">{{ a.readable }}</td>
           <td>
             {% if item.closed %}
@@ -55,6 +56,10 @@
       {% else %}
         <tr><td colspan="4" class="text-secondary">لا أجوبة بعد على هذا السؤال.</td></tr>
       {% endfor %}
+      {% if item.missing %}
+        <tr><td colspan="4" class="text-secondary">
+          🚫 لم يجب ({{ item.missing|length }}): {{ item.missing|join('، ') }}</td></tr>
+      {% endif %}
       </tbody>
     </table></div>
   </div>

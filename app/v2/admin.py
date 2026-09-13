@@ -51,6 +51,7 @@ from ..constants import QUESTION_TYPES_CLOSED
 from ..services.quizzes import (
     QuizImportError,
     build_quiz,
+    grade_answer,
     normalize_quiz_json,
     readable_answer,
 )
@@ -692,8 +693,25 @@ async def quiz_grade_page(request: Request, quiz_id: int):
             .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
             .where(QuizQuestion.quiz_id == quiz_id)
             .order_by(QuizQuestion.position, Student.full_name))).all()
-    # تجميع الأجوبة حسب السؤال، مع نصّ مقروء وحالة الإغلاق.
+        # قائمة المتوقَّع منهم الإجابة (ح-١٢: لتمييز «لم يجب»): مشاركو جلسات هذا
+        # التقويم الحاضرون + تلاميذ فوجه إن كان منزليّاً.
+        expected: dict[int, str] = {}
+        for sid_, name in (await s.execute(
+                select(Student.id, Student.full_name)
+                .join(SessionStudent, SessionStudent.student_id == Student.id)
+                .join(QuizSession, QuizSession.id == SessionStudent.session_id)
+                .where(QuizSession.quiz_id == quiz_id,
+                       SessionStudent.present.is_(True)))).all():
+            expected[sid_] = name
+        if quiz.group_name:
+            for sid_, name in (await s.execute(
+                    select(Student.id, Student.full_name).where(
+                        Student.group_name == quiz.group_name,
+                        Student.active.is_(True)))).all():
+                expected[sid_] = name
+    # تجميع الأجوبة حسب السؤال، مع نصّ مقروء وحالة الإغلاق والتسليم (سلّم/مسوّدة).
     by_q: dict[int, list] = {}
+    answered: dict[int, set] = {}
     for ans, student in rows:
         q = next((qq for qq in quiz.questions if qq.id == ans.quiz_question_id), None)
         if q is None:
@@ -702,9 +720,16 @@ async def quiz_grade_page(request: Request, quiz_id: int):
             "ans": ans, "student": student,
             "readable": readable_answer(q, ans.raw),
             "effective": ans.manual_score if ans.manual_score is not None else ans.auto_score,
+            "submitted": ans.submitted,          # سلّم؟ أم مسوّدة لم تُسلَّم؟
         })
-    questions = [{"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
-                  "answers": by_q.get(q.id, [])} for q in quiz.questions]
+        answered.setdefault(q.id, set()).add(student.id)
+    # لكلّ سؤال: من لم يجب (متوقَّع بلا أيّ جواب) — الحالة الثالثة.
+    questions = []
+    for q in quiz.questions:
+        missing = [name for sid_, name in expected.items()
+                   if sid_ not in answered.get(q.id, set())]
+        questions.append({"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
+                          "answers": by_q.get(q.id, []), "missing": missing})
     return templates.TemplateResponse(
         "admin/quiz_grade.html",
         _ctx(request, quiz=quiz, questions=questions,
@@ -897,11 +922,37 @@ async def session_close(request: Request, sid: int):
     if (g := require_admin(request)):
         return g
     from datetime import datetime
+    from sqlalchemy.orm import selectinload
     async with AsyncSessionLocal() as s:
         sess = await s.get(QuizSession, sid)
         if sess:
             sess.status = "closed"
             sess.closed_at = datetime.now()
+            # ح-١٢: تسليم آليّ لمسوّدات الحاضرين الذين لم يسلّموا — لئلّا تضيع أجوبتهم.
+            # المغلقة تُصحَّح يقينياً وتُصادَق؛ المفتوحة تُسلَّم وتنتظر الأستاذ.
+            quiz = (await s.execute(
+                select(Quiz).where(Quiz.id == sess.quiz_id)
+                .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+            q_by_id = {q.id: q for q in (quiz.questions if quiz else [])}
+            parts = (await s.execute(select(SessionStudent).where(
+                SessionStudent.session_id == sid,
+                SessionStudent.present.is_(True),
+                SessionStudent.submitted_at.is_(None)))).scalars().all()
+            for part in parts:
+                drafts = (await s.execute(select(Answer).where(
+                    Answer.student_id == part.student_id,
+                    Answer.quiz_question_id.in_(list(q_by_id)),
+                    Answer.submitted.is_(False)))).scalars().all()
+                for ans in drafts:
+                    q = q_by_id.get(ans.quiz_question_id)
+                    if q is None:
+                        continue
+                    graded = grade_answer(q, ans.raw)
+                    ans.auto_score = graded["score"]
+                    ans.teacher_confirmed = q.qtype in QUESTION_TYPES_CLOSED
+                    ans.submitted = True
+                if drafts:
+                    part.submitted_at = datetime.now()
             await s.commit()
     # نسخة احتياطية تلقائية عند إغلاق الجلسة (أفضل جهد — لا تُفشِل الإغلاق).
     await asyncio.to_thread(try_backup_quiet)
