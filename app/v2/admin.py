@@ -739,6 +739,8 @@ def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
         if not prompt:                          # صفّ حُذف نصّه → يُتجاهَل
             continue
         qtype = form.get(f"q_type_{i}") or "long_text"
+        if qtype == "skip":                     # مجرّد عنوان — لا يُحفَظ سؤالاً
+            continue
         if qtype not in _REVIEW_OPEN and qtype not in _REVIEW_MCQ:
             qtype = "long_text"
         try:

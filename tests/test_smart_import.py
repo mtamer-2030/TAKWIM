@@ -46,9 +46,9 @@ class _FormReq:
 
 def test_heuristic_skips_header_and_detects_mcq():
     q = heuristic_quiz_from_text(EXAM, title_hint="فرض")
-    # سطر الترويسة (المستوى/المادة/المدة) لا يصير سؤالاً.
-    prompts = " ".join(x["prompt"] for x in q["questions"])
-    assert "المستوى:" not in prompts
+    # سطر الترويسة (المستوى/المادة/المدة) يظهر مؤشَّراً «تخطَّ» لا سؤالاً يُحفَظ.
+    header = next(x for x in q["questions"] if "المستوى:" in x["prompt"])
+    assert header["type"] == "skip"
     types = [x["type"] for x in q["questions"]]
     assert "mcq_single" in types and "mcq_multi" in types and "long_text" in types
     mcq1 = next(x for x in q["questions"] if x["type"] == "mcq_single")
@@ -59,6 +59,37 @@ def test_heuristic_checked_box_marks_correct():
     q = heuristic_quiz_from_text("العاصمة: ☐ فاس ☑ الرباط ☐ طنجة")
     m = q["questions"][0]
     assert m["type"] == "mcq_single" and m["options"][m["correct"][0]] == "الرباط"
+
+
+def test_heuristic_flags_titles_as_skip():
+    txt = ("المستوى: الجذع | المادة: الفلسفة | المدة: ساعة\n"
+           "أولا: أسئلة معرفية\n"
+           "معارف عامة (4.5 نقط)\n"
+           "اشرح العلاقة بين الوعي واللاوعي.")
+    q = heuristic_quiz_from_text(txt)
+    by_type = [x["type"] for x in q["questions"]]
+    assert by_type.count("skip") == 3          # الترويسة + عنوانان → تخطَّ
+    assert "long_text" in by_type              # السؤال الحقيقيّ بقي
+
+
+def test_save_excludes_skip_rows(monkeypatch):
+    prep = _setup(monkeypatch)
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        form = FormData([
+            ("level_id", str(lid)), ("count", "2"),
+            ("r_title", "ف"), ("r_kind", "exam"),
+            ("q_prompt_0", "أولا: أسئلة"), ("q_type_0", "skip"), ("q_score_0", "0"),
+            ("q_prompt_1", "حلّل القولة."), ("q_type_1", "long_text"), ("q_score_1", "8"),
+        ])
+        await admin_mod.quizzes_import_save(_FormReq(form))
+        async with S() as s:
+            n = await s.scalar(select(func.count()).select_from(QuizQuestion))
+        await eng.dispose()
+        return n
+
+    assert asyncio.run(run()) == 1              # صفّ العنوان لم يُحفَظ
 
 
 # ————— مسار الاستيراد → مراجعة —————

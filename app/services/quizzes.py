@@ -89,6 +89,38 @@ def _open_q(prompt: str) -> dict:
             "indicators": [], "penalties": [], "auto_scored": False}
 
 
+def _skip_q(prompt: str) -> dict:
+    """سطر يُرجَّح أنه عنوان/ترويسة — يظهر في المراجعة مؤشَّراً «تخطَّ» لا يُحفَظ."""
+    q = _open_q(prompt)
+    q["type"] = "skip"
+    q["max_score"] = 0.0
+    return q
+
+
+# عناوين أقسام شائعة في الفروض المغربيّة (لا أسئلة).
+_SECTION_RE = _re.compile(
+    r"^\s*(?:أولا|ثانيا|ثالثا|رابعا|خامسا|الجزء|القسم|المحور|المجال|التمرين"
+    r"|الوضعية|المطلوب|الموضوع|معارف|المهارات|القدرات|الكفايات|أسئلة|الأسئلة)\b")
+# أفعال/أدوات تبدأ بها الأسئلة الحقيقيّة (فلا تُعدّ عناوين).
+_Q_VERB = _re.compile(
+    r"^\s*(?:اشرح|حلّ?ل|عرّ?ف|بيّ?ن|ناقش|أجب|استخرج|قارن|علّ?ل|اذكر|صنّ?ف|رتّ?ب"
+    r"|وضّ?ح|اكتب|أنشئ|استنتج|حدّ?د|أبرز|ضع|أكمل|املأ|صل|اربط|ما|هل|لماذا|كيف|متى|أين|من)\b")
+
+
+def _is_section_title(line: str) -> bool:
+    """سطر عنوانٍ (قسم/محور/معارف…) لا سؤال — بلا خانات ولا استفهام."""
+    if _BOX_ANY.search(line) or line.endswith("؟"):
+        return False
+    if _Q_VERB.match(line):
+        return False
+    if _SECTION_RE.match(line):
+        return True
+    # عنوان قصير ينتهي بنقاط بين قوسين ((4.5 نقط)) وليس سؤالاً.
+    if _re.search(r"\(\s*[\d.,٠-٩]+\s*(?:نقط|نقطة|ن)\s*\)", line) and len(line) <= 70:
+        return True
+    return False
+
+
 def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     """محلّل متسامح يقينيّ: يحوّل نصّ فرض/تمرين عاديّاً إلى أسئلة مباشرةً.
 
@@ -104,10 +136,12 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     n = len(lines)
     while i < n:
         ln = lines[i]
-        if _is_header(ln):
+        boxes = list(_BOX_ANY.finditer(ln))
+        # ترويسة إداريّة أو عنوان قسم (بلا خانات) → يظهر مؤشَّراً «تخطَّ» لا سؤالاً.
+        if not boxes and (_is_header(ln) or _is_section_title(ln)):
+            questions.append(_skip_q(_LEAD.sub("", ln).strip()))
             i += 1
             continue
-        boxes = list(_BOX_ANY.finditer(ln))
         if len(boxes) >= 2:
             # خيارات مضمَّنة في السطر نفسه: ما قبل أوّل علامة سؤالٌ، والباقي خيارات.
             q = _mcq_from_text(ln[:boxes[0].start()], ln[boxes[0].start():])
