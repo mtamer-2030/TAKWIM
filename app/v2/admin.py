@@ -724,41 +724,37 @@ async def quiz_delete(request: Request, quiz_id: int):
 # ═══════════════ تصحيح أجوبة التلاميذ (مصادقة + تنقيط المفتوحة) ═══════════════
 
 
-@router.get("/quizzes/{quiz_id}/grade", response_class=HTMLResponse)
-async def quiz_grade_page(request: Request, quiz_id: int):
-    """شاشة تصحيح: لكلّ سؤال أجوبة التلاميذ. المغلقة مصحّحة آليّاً (تُصادَق)،
-    والمفتوحة يُدخل الأستاذ نقطتها ويصادق. تغذّي التقارير والذكاء الاصطناعي."""
-    if (g := require_admin(request)):
-        return g
+async def _grade_view(s, quiz_id: int):
+    """يبني بيانات شاشة التصحيح (quiz + questions) — مصدر واحد يشترك فيه العرض
+    والحفظ الجزئيّ (HTMX)، فلا يفترق ما يُعرَض عمّا يُعاد بعد الحفظ."""
     from sqlalchemy.orm import selectinload
-    async with AsyncSessionLocal() as s:
-        quiz = (await s.execute(
-            select(Quiz).where(Quiz.id == quiz_id)
-            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
-        if quiz is None:
-            return HTMLResponse("التقويم غير موجود", status_code=404)
-        rows = (await s.execute(
-            select(Answer, Student)
-            .join(Student, Student.id == Answer.student_id)
-            .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
-            .where(QuizQuestion.quiz_id == quiz_id)
-            .order_by(QuizQuestion.position, Student.full_name))).all()
-        # قائمة المتوقَّع منهم الإجابة (ح-١٢: لتمييز «لم يجب»): مشاركو جلسات هذا
-        # التقويم الحاضرون + تلاميذ فوجه إن كان منزليّاً.
-        expected: dict[int, str] = {}
+    quiz = (await s.execute(
+        select(Quiz).where(Quiz.id == quiz_id)
+        .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+    if quiz is None:
+        return None, None
+    rows = (await s.execute(
+        select(Answer, Student)
+        .join(Student, Student.id == Answer.student_id)
+        .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
+        .where(QuizQuestion.quiz_id == quiz_id)
+        .order_by(QuizQuestion.position, Student.full_name))).all()
+    # قائمة المتوقَّع منهم الإجابة (ح-١٢: لتمييز «لم يجب»): مشاركو جلسات هذا
+    # التقويم الحاضرون + تلاميذ فوجه إن كان منزليّاً.
+    expected: dict[int, str] = {}
+    for sid_, name in (await s.execute(
+            select(Student.id, Student.full_name)
+            .join(SessionStudent, SessionStudent.student_id == Student.id)
+            .join(QuizSession, QuizSession.id == SessionStudent.session_id)
+            .where(QuizSession.quiz_id == quiz_id,
+                   SessionStudent.present.is_(True)))).all():
+        expected[sid_] = name
+    if quiz.group_name:
         for sid_, name in (await s.execute(
-                select(Student.id, Student.full_name)
-                .join(SessionStudent, SessionStudent.student_id == Student.id)
-                .join(QuizSession, QuizSession.id == SessionStudent.session_id)
-                .where(QuizSession.quiz_id == quiz_id,
-                       SessionStudent.present.is_(True)))).all():
+                select(Student.id, Student.full_name).where(
+                    Student.group_name == quiz.group_name,
+                    Student.active.is_(True)))).all():
             expected[sid_] = name
-        if quiz.group_name:
-            for sid_, name in (await s.execute(
-                    select(Student.id, Student.full_name).where(
-                        Student.group_name == quiz.group_name,
-                        Student.active.is_(True)))).all():
-                expected[sid_] = name
     # تجميع الأجوبة حسب السؤال، مع نصّ مقروء وحالة الإغلاق والتسليم (سلّم/مسوّدة).
     by_q: dict[int, list] = {}
     answered: dict[int, set] = {}
@@ -780,6 +776,19 @@ async def quiz_grade_page(request: Request, quiz_id: int):
                    if sid_ not in answered.get(q.id, set())]
         questions.append({"q": q, "closed": q.qtype in QUESTION_TYPES_CLOSED,
                           "answers": by_q.get(q.id, []), "missing": missing})
+    return quiz, questions
+
+
+@router.get("/quizzes/{quiz_id}/grade", response_class=HTMLResponse)
+async def quiz_grade_page(request: Request, quiz_id: int):
+    """شاشة تصحيح: لكلّ سؤال أجوبة التلاميذ. المغلقة مصحّحة آليّاً (تُصادَق)،
+    والمفتوحة يُدخل الأستاذ نقطتها ويصادق. تغذّي التقارير والذكاء الاصطناعي."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        quiz, questions = await _grade_view(s, quiz_id)
+    if quiz is None:
+        return HTMLResponse("التقويم غير موجود", status_code=404)
     return templates.TemplateResponse(
         "admin/quiz_grade.html",
         _ctx(request, quiz=quiz, questions=questions,
@@ -839,24 +848,48 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
 
 @router.post("/quizzes/{quiz_id}/grade")
 async def quiz_grade_save(request: Request, quiz_id: int):
-    """يحفظ نقط الأستاذ للمفتوحة ويصادق على الأجوبة المؤشَّرة."""
+    """يحفظ نقط الأستاذ للمفتوحة ويصادق على الأجوبة المؤشَّرة.
+
+    ٤-ب: لا يمسّ إلّا الأجوبة المعروضة فعلاً في الصفحة (حقل shown) — فجوابٌ سلّمه
+    تلميذ متأخّراً بعد فتح الشاشة لا يُلغى تصديقه سهواً (سباق التسليم المتأخّر).
+    ولا يُصادَق على جوابٍ مفتوح بلا نقطة (تفادي صفر صامت)."""
     if (g := require_admin(request)):
         return g
     form = await request.form()
+    shown: set[int] = set()
+    for v in form.getlist("shown"):
+        try:
+            shown.add(int(v))
+        except (TypeError, ValueError):
+            pass
     async with AsyncSessionLocal() as s:
-        answers = (await s.execute(
-            select(Answer)
-            .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
-            .where(QuizQuestion.quiz_id == quiz_id))).scalars().all()
-        for ans in answers:
-            raw_score = form.get(f"score_{ans.id}")
-            if raw_score not in (None, ""):
-                try:
-                    ans.manual_score = float(raw_score)
-                except ValueError:
-                    pass
-            ans.teacher_confirmed = form.get(f"confirm_{ans.id}") == "on"
-        await s.commit()
+        if shown:
+            answers = (await s.execute(
+                select(Answer)
+                .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
+                .where(QuizQuestion.quiz_id == quiz_id,
+                       Answer.id.in_(shown)))).scalars().all()
+            qmap = {q.id: q for q in (await s.execute(
+                select(QuizQuestion).where(QuizQuestion.quiz_id == quiz_id))).scalars().all()}
+            for ans in answers:
+                raw_score = form.get(f"score_{ans.id}")
+                if raw_score not in (None, ""):
+                    try:
+                        ans.manual_score = float(raw_score)
+                    except ValueError:
+                        pass
+                want = form.get(f"confirm_{ans.id}") == "on"
+                q = qmap.get(ans.quiz_question_id)
+                is_closed = q is not None and q.qtype in QUESTION_TYPES_CLOSED
+                eff = ans.manual_score if ans.manual_score is not None else ans.auto_score
+                # مصادقة فقط إن كان مغلقاً (نقطته آليّة) أو كانت له نقطة فعليّة.
+                ans.teacher_confirmed = want and (is_closed or eff is not None)
+            await s.commit()
+    if request.headers.get("HX-Request"):
+        async with AsyncSessionLocal() as s:
+            quiz, questions = await _grade_view(s, quiz_id)
+        return templates.TemplateResponse(
+            "admin/_quiz_grade_rows.html", _ctx(request, quiz=quiz, questions=questions))
     return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade", status_code=303)
 
 
