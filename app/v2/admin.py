@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -382,7 +383,6 @@ async def ai_test(request: Request):
     """اختبار سريع للمحرّك المحلّي: توليد قصير يكشف الخطأ الحقيقي إن وُجد."""
     if (g := require_admin(request)):
         return g
-    import asyncio
     ok, msg = await asyncio.to_thread(ping_generate)
     prefix = "✓ المحرّك يعمل: " if ok else "✗ "
     return RedirectResponse(f"/admin/ai?test={prefix}{msg}", status_code=303)
@@ -399,7 +399,6 @@ async def _run_ai_job(group_name: str, scope: str = "full") -> None:
     إن كان النطاق «full». نداءات Ollama الحاجبة تُنفَّذ في خيط (to_thread).
     scope="class" يكتفي بتقرير القسم (الأسرع).
     """
-    import asyncio
     do_class = scope in ("class", "full")
     do_students = scope in ("students", "full")
     job = _AI_JOBS[group_name]
@@ -467,7 +466,6 @@ async def ai_run(request: Request, group_name: str = Form(...),
     يختار الأستاذ التقرير الجماعي و/أو الفردي بخانتَي اختيار مستقلّتين."""
     if (g := require_admin(request)):
         return g
-    import asyncio
     want_class = do_class == "on"
     want_students = do_students == "on"
     if want_class and want_students:
