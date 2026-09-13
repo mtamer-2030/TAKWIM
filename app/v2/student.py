@@ -214,6 +214,10 @@ async def take_quiz(request: Request, quiz_id: int):
         sess, part = await _open_session_for(s, student, quiz_id)
         set_token = None
         if sess is not None:
+            # ح-١٥ (حزام أمان): تقويم الجلسة يجب أن يطابق مستوى التلميذ.
+            if quiz.level_id is not None and quiz.level_id != student.level_id:
+                return HTMLResponse(
+                    _blocked("هذا التقويم ليس لمستواك. راجع الأستاذ."), status_code=403)
             # وضع الجلسة الصفّية: بوابة حضور + قفل جهاز
             if part is None or not part.present:
                 return HTMLResponse(

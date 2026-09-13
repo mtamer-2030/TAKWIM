@@ -47,7 +47,7 @@ from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
-from ..constants import QUESTION_TYPES_CLOSED
+from ..constants import QUESTION_TYPES_CLOSED, level_of_class_label
 from ..services.quizzes import (
     QuizImportError,
     build_quiz,
@@ -846,7 +846,8 @@ async def sessions_list(request: Request):
         rows.append({"s": sess, "subs": subs, "present": present,
                      "total": len(sess.participants)})
     return templates.TemplateResponse(
-        "admin/sessions.html", _ctx(request, rows=rows, quizzes=quizzes, groups=groups))
+        "admin/sessions.html", _ctx(request, rows=rows, quizzes=quizzes, groups=groups,
+                                    error=request.query_params.get("error")))
 
 
 @router.post("/sessions/create")
@@ -857,6 +858,19 @@ async def session_create(request: Request, quiz_id: int = Form(...),
         return g
     group_name = group_name.strip()
     async with AsyncSessionLocal() as s:
+        # ح-١٥: منع صارم لفتح جلسة بتقويم لا يطابق مستوى الفوج (المستوى يُشتقّ من
+        # بادئة رمز القسم). إن كان للتقويم مستوى وعُرف مستوى الفوج واختلفا → رفض.
+        quiz = await s.get(Quiz, quiz_id)
+        if quiz is None:
+            return RedirectResponse("/admin/sessions?error=التقويم غير موجود.",
+                                    status_code=303)
+        lvl_code = level_of_class_label(group_name)
+        if quiz.level_id is not None and lvl_code is not None:
+            grp_level = await s.scalar(select(Level).where(Level.code == lvl_code))
+            if grp_level is not None and grp_level.id != quiz.level_id:
+                return RedirectResponse(
+                    "/admin/sessions?error=مستوى التقويم لا يطابق مستوى الفوج — "
+                    "اختر تقويماً من مستوى الفوج نفسه.", status_code=303)
         sess = QuizSession(quiz_id=quiz_id, group_name=group_name, status="draft")
         s.add(sess)
         await s.flush()

@@ -2,6 +2,7 @@
 {% block title %}الجلسات · PHILO-TECH{% endblock %}
 {% block content %}
 <h2 class="h2 mb-3">الجلسات الصفّية</h2>
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">فتح جلسة جديدة</h3>
