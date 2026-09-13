@@ -726,6 +726,7 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
             status_code=303)
     from sqlalchemy.orm import selectinload
     suggested = 0
+    skipped = 0
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
             select(Quiz).where(Quiz.id == quiz_id)
@@ -738,6 +739,11 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
             answers = (await s.execute(
                 select(Answer).where(Answer.quiz_question_id.in_(list(open_qs))))).scalars().all()
             for ans in answers:
+                # ح-١٠: لا يُكتب اقتراحٌ على جوابٍ نقّطه الأستاذ يدوياً أو صادق عليه —
+                # الاقتراح مساعدةٌ للأجوبة غير المصحّحة فقط، لا يمحو عمل الأستاذ.
+                if ans.manual_score is not None or ans.teacher_confirmed:
+                    skipped += 1
+                    continue
                 q = open_qs[ans.quiz_question_id]
                 answer_text = (ans.raw or {}).get("text", "") if isinstance(ans.raw, dict) else ""
                 guidance = "\n".join(
@@ -750,9 +756,10 @@ async def quiz_grade_ai(request: Request, quiz_id: int):
                 ans.manual_score = score      # اقتراح؛ يبقى غير مصادَق حتى يراجعه الأستاذ
                 suggested += 1
         await s.commit()
-    return RedirectResponse(
-        f"/admin/quizzes/{quiz_id}/grade?ai=اقتُرحت {suggested} نقطة للأسئلة المفتوحة — راجِعها وصادِق.",
-        status_code=303)
+    msg = f"اقتُرحت {suggested} نقطة للأسئلة المفتوحة — راجِعها وصادِق."
+    if skipped:
+        msg += f" وتُركت {skipped} نقطة مصحّحة يدوياً كما هي."
+    return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade?ai={msg}", status_code=303)
 
 
 @router.post("/quizzes/{quiz_id}/grade")
