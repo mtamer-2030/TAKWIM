@@ -9,14 +9,18 @@ import pytest
 from app.importer import ImporterError, _preprocess_for_ocr, extract_text_from_pdf
 
 
-def test_preprocess_upscales_grayscales_and_binarizes():
+def test_preprocess_upscales_and_grayscales_without_binarizing():
     from PIL import Image
-    # صورة صغيرة ملوّنة → بعد المعالجة: رمادية، مكبَّرة (≥1500 عرضاً)، ثنائية القيم.
+    # صورة صغيرة ملوّنة → بعد المعالجة: رمادية، مكبَّرة (≥1500 عرضاً).
+    # ٤-ج: لم نعُد نُثنّي بعتبة ثابتة (كانت تشوّه العربية)؛ نترك التثنية لـ Tesseract.
     img = Image.new("RGB", (300, 120), (200, 180, 160))
     out = _preprocess_for_ocr(img)
     assert out.mode == "L"
     assert out.width >= 1500                       # صُغِّرت الدقّة فكُبِّرت
-    assert set(out.getdata()) <= {0, 255}          # عتبة ثنائية
+    # صورة متدرّجة تُبقي مستويات رماديّة متعدّدة (لا لونين فقط).
+    grad = Image.new("L", (1600, 60))
+    grad.putdata([x % 256 for _ in range(60) for x in range(1600)])
+    assert len(set(_preprocess_for_ocr(grad).getdata())) > 2
 
 
 class _FakePage:

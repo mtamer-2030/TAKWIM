@@ -125,8 +125,12 @@ def _ocr_pdf_pages(page_images) -> str:
 
 
 def _preprocess_for_ocr(img):
-    """معالجة قبلية ترفع دقّة OCR: رمادي + تكبير الصور الصغيرة + رفع التباين + عتبة.
+    """معالجة قبلية ترفع دقّة OCR: تصحيح دوران + تدرّج رمادي + تكبير + رفع تباين.
 
+    ٤-ج: لا نُثنّي الصورة بعتبة ثابتة. Tesseract 5 (LSTM) يُثنّيها داخليّاً (Otsu)
+    ويُدرَّب على التدرّج الرماديّ؛ فالعتبة الثابتة القديمة (p>160) كانت تسحق بكسلات
+    الحروف والتشكيل فتشوّه العربية — خاصّةً تحت الإضاءة غير المتجانسة لصور الهواتف.
+    نُبقي رماديّاً نظيفاً بدقّة كافية ونترك التثنية لـ Tesseract.
     دالّة نقيّة على صورة PIL (تُختبَر بلا ثنائي Tesseract)."""
     from PIL import Image, ImageOps
     img = ImageOps.exif_transpose(img)          # تصحيح دوران الهاتف
@@ -135,9 +139,7 @@ def _preprocess_for_ocr(img):
     if img.width < 1500:
         scale = 1500 / img.width
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
-    img = ImageOps.autocontrast(img)             # رفع التباين
-    img = img.point(lambda p: 255 if p > 160 else 0)  # عتبة ثنائية (أبيض/أسود)
-    return img
+    return ImageOps.autocontrast(img)            # رفع التباين، بلا تثنية قاسية
 
 
 def _ocr_pil(img, lang: str = "ara") -> str:
