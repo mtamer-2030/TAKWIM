@@ -2,37 +2,99 @@
 {% block title %}مراجعة الاستيراد · PHILO-TECH{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="h2 m-0">مراجعة الاستيراد الذكيّ</h2>
+  <h2 class="h2 m-0">مراجعة التقويم قبل الحفظ</h2>
   <a class="btn btn-outline-secondary" href="/admin/quizzes">→ التقاويم</a>
 </div>
 
 {% if note %}<div class="alert alert-info">{{ note }}</div>{% endif %}
 {% if errors %}
-  <div class="alert alert-danger">
-    <div class="fw-bold mb-1">أخطاء يجب إصلاحها:</div>
-    <ul class="m-0">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
-  </div>
+  <div class="alert alert-danger"><ul class="m-0">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
 {% endif %}
 
-<div class="card">
-  <div class="card-body">
-    <p class="text-secondary">
-      {% if is_json %}هذه مسوّدة الأسئلة بصيغة JSON — راجِعها وصحّحها ثمّ احفظ.
-      يبقى القرار لك: أضِف، احذف، عدّل النقط والأنواع.{% else %}
-      لم يتوفّر التحويل الآليّ. النصّ المستخرَج معروض أدناه — هيكِله يدويّاً بصيغة JSON
-      (استعن بـ «تحميل قالب Word» أو <code>samples/quiz_template.json</code>) ثمّ احفظ.{% endif %}
-    </p>
-    <form method="post" action="/admin/quizzes/import/save">
-      <input type="hidden" name="level_id" value="{{ level_id }}">
-      <input type="hidden" name="group_name" value="{{ group_name }}">
-      <textarea name="json_text" dir="ltr" spellcheck="false"
-                style="width:100%;height:26rem;font-family:monospace;font-size:.85rem;
-                       white-space:pre;overflow:auto">{{ draft }}</textarea>
-      <div class="d-flex gap-2 mt-2">
-        <button class="btn btn-primary">حفظ التقويم</button>
-        <a class="btn btn-outline-secondary" href="/admin/quizzes/template">تحميل قالب Word</a>
+<form method="post" action="/admin/quizzes/import/save" id="reviewForm">
+  <input type="hidden" name="level_id" value="{{ level_id }}">
+  <input type="hidden" name="group_name" value="{{ group_name }}">
+  <input type="hidden" name="count" id="qcount" value="{{ questions|length }}">
+
+  <div class="card mb-3"><div class="card-body row g-2">
+    <div class="col-md-8">
+      <label class="form-label">عنوان التقويم</label>
+      <input name="r_title" class="form-control" value="{{ r_title }}" required>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">النوع</label>
+      <select name="r_kind" class="form-select">
+        <option value="exercise" {{ 'selected' if r_kind=='exercise' }}>تمرين</option>
+        <option value="diagnostic" {{ 'selected' if r_kind=='diagnostic' }}>تشخيصيّ</option>
+        <option value="exam" {{ 'selected' if r_kind=='exam' }}>فرض</option>
+      </select>
+    </div>
+  </div></div>
+
+  <div id="qrows">
+    {% for q in questions %}
+    <div class="card mb-2 qrow"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="text-secondary qnum">سؤال {{ loop.index }}</span>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف</button>
       </div>
-    </form>
+      <textarea class="form-control mb-2 qp" rows="2" placeholder="نصّ السؤال">{{ q.prompt }}</textarea>
+      <div class="row g-2">
+        <div class="col-md-8"><select class="form-select qt">
+          <option value="long_text" {{ 'selected' if q.type!='short_text' }}>مقال / جواب مطوّل</option>
+          <option value="short_text" {{ 'selected' if q.type=='short_text' }}>جواب قصير</option>
+        </select></div>
+        <div class="col-md-4"><input type="number" step="0.25" min="0"
+          class="form-control qs" value="{{ q.max_score }}" placeholder="النقطة"></div>
+      </div>
+    </div></div>
+    {% endfor %}
   </div>
-</div>
+
+  <div class="d-flex gap-2 mb-4">
+    <button class="btn btn-primary">حفظ التقويم</button>
+    <button type="button" class="btn btn-outline-secondary" onclick="addRow()">+ سؤال</button>
+    <a class="btn btn-outline-secondary ms-auto" href="/admin/quizzes/template">تحميل قالب Word</a>
+  </div>
+</form>
+
+<template id="rowTpl">
+  <div class="card mb-2 qrow"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <span class="text-secondary qnum">سؤال</span>
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="rmRow(this)">حذف</button>
+    </div>
+    <textarea class="form-control mb-2 qp" rows="2" placeholder="نصّ السؤال"></textarea>
+    <div class="row g-2">
+      <div class="col-md-8"><select class="form-select qt">
+        <option value="long_text">مقال / جواب مطوّل</option>
+        <option value="short_text">جواب قصير</option>
+      </select></div>
+      <div class="col-md-4"><input type="number" step="0.25" min="0"
+        class="form-control qs" value="4" placeholder="النقطة"></div>
+    </div>
+  </div></div>
+</template>
+
+<script>
+function renumber() {
+  var rows = document.querySelectorAll('#qrows .qrow');
+  rows.forEach(function (row, i) {
+    row.querySelector('.qnum').textContent = 'سؤال ' + (i + 1);
+    row.querySelector('.qp').name = 'q_prompt_' + i;
+    row.querySelector('.qt').name = 'q_type_' + i;
+    row.querySelector('.qs').name = 'q_score_' + i;
+  });
+  document.getElementById('qcount').value = rows.length;
+}
+function rmRow(btn) { btn.closest('.qrow').remove(); renumber(); }
+function addRow() {
+  var tpl = document.getElementById('rowTpl');
+  document.getElementById('qrows').appendChild(tpl.content.cloneNode(true));
+  renumber();
+}
+document.getElementById('reviewForm').addEventListener('submit', renumber);
+renumber();   // ترقيم أوليّ يربط أسماء الحقول
+</script>
 {% endblock %}

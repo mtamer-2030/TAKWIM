@@ -15,7 +15,6 @@ from sqlalchemy import delete as sa_delete, func, select
 
 from ..ai_feedback import (
     AIUnavailable,
-    extract_quiz_json,
     generate_class_plan,
     generate_student_plan,
     ollama_available,
@@ -48,11 +47,12 @@ from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
-from ..constants import QUESTION_TYPES_CLOSED, level_of_class_label
+from ..constants import KINDS, QUESTION_TYPES_CLOSED, level_of_class_label
 from ..services.quizzes import (
     QuizImportError,
     build_quiz,
     grade_answer,
+    heuristic_quiz_from_text,
     normalize_quiz_json,
     readable_answer,
 )
@@ -660,13 +660,17 @@ async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> 
         return normalized["title"], len(quiz.questions)
 
 
-def _review_page(request: Request, *, draft: str, level_id: str, group_name: str,
-                 note: str = "", errors: list[str] | None = None, is_json: bool = True):
-    """صفحة مراجعة الاستيراد الذكيّ: JSON قابل للتحرير + أخطاء التحقّق + حفظ."""
+_REVIEW_TYPES = ("long_text", "short_text")   # أنواع مفتوحة يحرّرها الأستاذ في المراجعة
+
+
+def _review_page(request: Request, *, title: str, kind: str, questions: list[dict],
+                 level_id: str, group_name: str, note: str = "",
+                 errors: list[str] | None = None):
+    """صفحة مراجعة الاستيراد: عنوان + نوع + أسئلة قابلة للتحرير (بلا JSON)."""
     return templates.TemplateResponse(
         "admin/quiz_import_review.html",
-        _ctx(request, draft=draft, level_id=level_id, group_name=group_name,
-             note=note, errors=errors or [], is_json=is_json))
+        _ctx(request, r_title=title, r_kind=kind, questions=questions,
+             level_id=level_id, group_name=group_name, note=note, errors=errors or []))
 
 
 @router.post("/quizzes/import")
@@ -675,8 +679,8 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
     """رفع تقويم (JSON/Word/PDF/صورة) → أسئلة.
 
     مساران: (١) يقينيّ — JSON صالح أو قالب Word يُحلَّل حرفيّاً فيُحفَظ مباشرةً.
-    (٢) ذكيّ — أيّ ملفّ آخر: يُستخرَج نصّه ويحوّله المحرّك المحلّي إلى مسوّدة JSON
-    تُعرَض للأستاذ ليراجعها ويصحّحها قبل الحفظ (اقتراحٌ لا حكم، ق-٤)."""
+    (٢) متسامح — أيّ ملفّ آخر: يُستخرَج نصّه ويُقسَّم أسئلةً مفتوحةً يقينيّاً (بلا
+    ذكاء اصطناعيّ، بلا اتصال)، وتُعرَض قابلةً للتحرير ليراجعها الأستاذ ويحفظ."""
     if (g := require_admin(request)):
         return g
     data = await file.read()
@@ -693,62 +697,78 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             f"/admin/quizzes?saved=تمّ استيراد «{title}» بـ{n} سؤالاً.", status_code=303)
 
-    # (٢) المسار الذكيّ: استخراج نصّ الملفّ ثمّ توليد مسوّدة JSON بالمحرّك المحلّي.
+    # (٢) المسار المتسامح: استخراج النصّ ثمّ تقسيمه أسئلةً مفتوحةً (يعمل دائماً وبلا اتصال).
     name = (file.filename or "").lower()
-    if name.endswith(".json"):
-        # JSONهم لم يطابق المخطّط — نعرضه لتصحيحه يدويّاً (بلا محرّك).
-        return _review_page(
-            request, draft=data.decode("utf-8", "replace"),
-            level_id=level_id, group_name=group_name,
-            note="ملفّ JSON لم يطابق المخطّط — صحّحه هنا ثمّ احفظ.", errors=errors)
     try:
         raw = extract_text(file.filename, data).text
-    except (ImporterError, Exception) as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — txt أو أيّ ملفّ قابل للفكّ نصّاً
+        raw = data.decode("utf-8", "replace")
+    import os
+    hint = os.path.splitext(os.path.basename(file.filename or ""))[0]
+    parsed = heuristic_quiz_from_text(raw, title_hint=hint)
+    if not parsed["questions"]:
         return RedirectResponse(
-            f"/admin/quizzes?error=تعذّر قراءة الملفّ: {exc}", status_code=303)
-    try:
-        draft = await asyncio.to_thread(extract_quiz_json, raw)
-        try:                                    # تجميل JSON إن أمكن
-            draft = json.dumps(json.loads(draft), ensure_ascii=False, indent=2)
-        except (json.JSONDecodeError, ValueError):
-            pass
-        note = "استُخرجت المسوّدة آليّاً بالمحرّك المحلّي — راجِعها وصحّحها قبل الحفظ."
-        return _review_page(request, draft=draft, level_id=level_id,
-                            group_name=group_name, note=note)
-    except AIUnavailable as exc:
-        # تدهور لطيف: نعرض النصّ الخام ليهيكله الأستاذ يدويّاً، ونرشد للقالب/المحرّك.
-        return _review_page(
-            request, draft=raw, level_id=level_id, group_name=group_name, is_json=False,
-            note=(f"{exc} — لتحويلٍ آليّ شغّل المحرّك المحلّي (Ollama) وأعِد المحاولة، "
-                  "أو استعمل «تحميل قالب Word». النصّ المستخرَج معروض أدناه للمساعدة."))
+            "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
+            status_code=303)
+    note = ("قُسِّم الملفّ إلى أسئلة مفتوحة تلقائيّاً — راجِعها، عدّل النصّ والنقطة والنوع، "
+            "أضِف أو احذف، ثمّ احفظ. (لأسئلة الاختيار المتعدّد استعمل قالب Word أو JSON.)")
+    return _review_page(request, title=parsed["title"], kind=parsed["kind"],
+                        questions=parsed["questions"], level_id=level_id,
+                        group_name=group_name, note=note)
 
 
 @router.post("/quizzes/import/save")
-async def quizzes_import_save(request: Request, json_text: str = Form(""),
-                             level_id: str = Form(""), group_name: str = Form("")):
-    """يحفظ مسوّدة الاستيراد الذكيّ بعد مراجعة الأستاذ وتحريره لها."""
+async def quizzes_import_save(request: Request):
+    """يحفظ التقويم بعد مراجعة الأستاذ لأسئلته المستخرَجة وتحريرها في النموذج."""
     if (g := require_admin(request)):
         return g
-    lid = int(level_id) if level_id.strip().isdigit() else None
+    form = await request.form()
+    level_id = (form.get("level_id") or "").strip()
+    group_name = form.get("group_name") or ""
+    lid = int(level_id) if level_id.isdigit() else None
     if lid is None:
         return RedirectResponse(
             "/admin/quizzes?error=اختر المستوى قبل الحفظ.", status_code=303)
+
+    title = (form.get("r_title") or "").strip() or "تقويم مستورد"
+    kind = form.get("r_kind") or "exercise"
+    if kind not in KINDS:
+        kind = "exercise"
     try:
-        payload = json.loads(json_text)
-    except json.JSONDecodeError as exc:
-        return _review_page(request, draft=json_text, level_id=level_id,
-                            group_name=group_name,
-                            note="راجِع الصيغة ثمّ احفظ.",
-                            errors=[f"JSON غير صالح: {exc}"])
-    try:
-        normalized = normalize_quiz_json(payload)
-    except QuizImportError as exc:
-        return _review_page(request, draft=json_text, level_id=level_id,
-                            group_name=group_name,
-                            note="صحّح الأخطاء التالية ثمّ احفظ:", errors=exc.errors)
-    title, n = await _save_normalized_quiz(normalized, lid, group_name)
+        count = int(form.get("count") or 0)
+    except ValueError:
+        count = 0
+    questions = []
+    for i in range(count):
+        prompt = (form.get(f"q_prompt_{i}") or "").strip()
+        if not prompt:                          # صفّ حُذف نصّه → يُتجاهَل
+            continue
+        qtype = form.get(f"q_type_{i}") or "long_text"
+        if qtype not in _REVIEW_TYPES:
+            qtype = "long_text"
+        try:
+            ms = float(form.get(f"q_score_{i}") or 4)
+        except ValueError:
+            ms = 4.0
+        questions.append({
+            "type": qtype, "competency": None, "prompt": prompt, "stimulus": None,
+            "max_score": max(0.0, ms), "payload": {},
+            "indicators": [], "penalties": [], "auto_scored": False,
+        })
+
+    if not questions:
+        # نعيد صفحة المراجعة بصفّ فارغ واحد ورسالة، بدل رسالة خطأ مبهمة.
+        return _review_page(
+            request, title=title, kind=kind,
+            questions=[{"type": "long_text", "prompt": "", "max_score": 4.0}],
+            level_id=level_id, group_name=group_name,
+            errors=["أضِف نصّ سؤال واحد على الأقلّ قبل الحفظ."])
+
+    normalized = {"title": title, "kind": kind, "level": None, "unit": None,
+                  "concept": None, "stimuli": [], "questions": questions}
+    saved_title, n = await _save_normalized_quiz(normalized, lid, group_name)
     return RedirectResponse(
-        f"/admin/quizzes?saved=تمّ استيراد «{title}» بـ{n} سؤالاً.", status_code=303)
+        f"/admin/quizzes?saved=تمّ استيراد «{saved_title}» بـ{n} سؤالاً.", status_code=303)
 
 
 @router.get("/quizzes/template")

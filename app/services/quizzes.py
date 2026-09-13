@@ -31,6 +31,73 @@ def normalize_quiz_json(data) -> dict:
     return result.normalized
 
 
+import re as _re
+
+# بداية سؤال: رقم (عربيّ/لاتينيّ) أو «السؤال/س» متبوعاً بفاصل، أو نقطة تعداد.
+_Q_START = _re.compile(
+    r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s+")
+_LEAD = _re.compile(r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s*")
+
+
+def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
+    """محلّل متسامح: يحوّل نصّ تمرين/فرض عاديّاً إلى تقويم أسئلة مفتوحة مباشرةً.
+
+    لا يتطلّب قالباً ولا ذكاءً اصطناعيّاً — يعمل دائماً وبلا اتصال. يقسّم النصّ إلى
+    أسئلة بالعلامات الشائعة (ترقيم، «السؤال/س»، تعداد، أو أسطر تنتهي بـ«؟»)، ويجعل
+    كلّ سؤال مفتوحاً (long_text) بلا مهارة محدّدة — يراجعها الأستاذ ويضبط النقط
+    والأنواع في شاشة المراجعة قبل الحفظ. اقتراحٌ يقينيّ لا حكم."""
+    raw_lines = [ln.strip() for ln in (text or "").splitlines()]
+    lines = [ln for ln in raw_lines if ln]
+    title = (title_hint or "").strip() or "تقويم مستورد"
+
+    # إن كان أوّل سطر عنواناً (قصير، لا يبدو سؤالاً) وتلته أسطر أخرى، نعتمده عنواناً.
+    if len(lines) > 1 and not _Q_START.match(lines[0]) and not lines[0].endswith("؟") \
+            and len(lines[0]) <= 80:
+        title = lines[0]
+        lines = lines[1:]
+
+    blocks: list[list[str]] = []
+    cur: list[str] = []
+    for ln in lines:
+        if _Q_START.match(ln):
+            if cur:
+                blocks.append(cur)
+            cur = [ln]
+        elif cur:
+            cur.append(ln)
+        else:
+            cur = [ln]
+    if cur:
+        blocks.append(cur)
+
+    # لا علامات ترقيم؟ نقسّم بالأسطر المنتهية بـ«؟»؛ وإلّا نجعل النصّ كلّه سؤالاً.
+    if len(blocks) <= 1 and lines:
+        q_lines = [ln for ln in lines if ln.endswith("؟")]
+        if len(q_lines) >= 2:
+            blocks = [[ln] for ln in lines if ln.endswith("؟")]
+
+    questions = []
+    for b in blocks:
+        prompt = " ".join(b).strip()
+        prompt = _LEAD.sub("", prompt).strip()      # إزالة علامة البداية
+        if not prompt:
+            continue
+        questions.append({
+            "type": "long_text", "competency": None, "prompt": prompt,
+            "stimulus": None, "max_score": 4.0, "payload": {},
+            "indicators": [], "penalties": [], "auto_scored": False,
+        })
+    # ضمان: نصّ غير فارغ لكن بلا أسئلة مكتشَفة → سؤال واحد بكامل النصّ.
+    if not questions and lines:
+        questions.append({
+            "type": "long_text", "competency": None,
+            "prompt": " ".join(lines).strip(), "stimulus": None, "max_score": 4.0,
+            "payload": {}, "indicators": [], "penalties": [], "auto_scored": False,
+        })
+    return {"title": title, "kind": "exercise", "level": None, "unit": None,
+            "concept": None, "stimuli": [], "questions": questions}
+
+
 def resolve_skill_id(value: str | None, skill_ids: dict[str, int]) -> int | None:
     """يحلّ قيمة الكفاية/المهارة إلى skill_id من خريطة (اسم المهارة → id).
 
