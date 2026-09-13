@@ -22,7 +22,7 @@
   </div>
   <div class="pt-main">
     <h3 style="margin:.2rem 0 1rem">{{ quiz.title }}</h3>
-    <div id="netBanner">⚠ انقطع الاتصال بالشبكة — أجوبتك محفوظة، تابع؛ سنعيد الحفظ عند العودة.</div>
+    <div id="netBanner">⚠ انقطع الاتصال بالشبكة.</div>
     <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
     {% for q in quiz.questions %}
       {% set a = saved.get(q.id) or {} %}
@@ -125,33 +125,112 @@
 </div>
 
 <script>
-// حفظ تدريجيّ (ح-٦): يخزّن المسوّدة كلّما تغيّر إدخال (مُمهَل) وكلّ 20ث، بلا مكتبات.
-// لا يمسّ التسليم النهائيّ؛ إن انقطعت الشبكة يبقى ما حُفظ ويُستأنَف عند إعادة الفتح.
+// حفظ تدريجيّ صادق (ح-٦ + ح-١٧): يخزّن المسوّدة كلّما تغيّر إدخال (مُمهَل 3ث) وكلّ 20ث.
+// المبدأ: لا نطمئن كذباً. الحالة المعروضة تعكس آخر حفظ ناجح فعلاً، والتغييرات غير
+// المحفوظة تُنسَخ محلّياً (localStorage) فتنجو من إغلاق الصفحة، وتُعاد عند عودة الشبكة.
 (function () {
+  var QID = {{ quiz.id }};
   var form = document.getElementById('quizForm');
   var status = document.getElementById('saveStatus');
   if (!form) return;
   var banner = document.getElementById('netBanner');
-  var timer = null, submitting = false;
-  form.addEventListener('submit', function () { submitting = true; });
+  var LS_KEY = 'philotech_draft_' + QID;
+  var timer = null, submitting = false, inFlight = false, dirty = false, lastSaved = null;
+
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  function hhmm(d) { return two(d.getHours()) + ':' + two(d.getMinutes()); }
+
+  // نسخة محلّية للإدخالات: تنجو من إغلاق الصفحة أو انقطاعها قبل وصول الحفظ للخادم.
+  function backupLocal() {
+    try {
+      var data = {};
+      new FormData(form).forEach(function (v, k) {
+        if (data[k] === undefined) data[k] = [v]; else data[k].push(v);
+      });
+      localStorage.setItem(LS_KEY, JSON.stringify({ t: Date.now(), data: data }));
+    } catch (e) { /* التخزين ممتلئ أو محظور — نتجاهل بلا كسر الصفحة. */ }
+  }
+  function clearLocal() { try { localStorage.removeItem(LS_KEY); } catch (e) {} }
+
+  function render() {
+    if (dirty) {
+      status.style.color = '#c62828';
+      status.textContent = lastSaved
+        ? '● تغييرات لم تُحفَظ بعد (آخر حفظ ناجح ' + hhmm(lastSaved) + ')'
+        : '● لم يُحفظ بعد — لا تغلق الصفحة';
+    } else if (lastSaved) {
+      status.style.color = '';
+      status.textContent = '✓ حُفظ ' + hhmm(lastSaved);
+    } else {
+      status.textContent = '';
+    }
+    if (!navigator.onLine) {
+      banner.textContent = dirty
+        ? '⚠ لا اتصال بالشبكة — تغييراتك محفوظة على هذا الجهاز فقط؛ لا تغلق الصفحة حتّى تعود الشبكة.'
+        : '⚠ لا اتصال بالشبكة — كلّ ما كتبته وصل الخادم؛ يمكنك المتابعة.';
+      banner.classList.add('show');
+    } else {
+      banner.classList.remove('show');
+    }
+  }
+
   function save() {
-    if (submitting) return;
-    fetch('/student/quiz/{{ quiz.id }}/save', { method: 'POST', body: new FormData(form) })
-      .then(function (r) { return r.status === 200 ? r.text() : ''; })
-      .then(function (t) { if (t) status.textContent = t; })
-      .catch(function () { status.textContent = '⚠ تعذّر الحفظ — سنعيد المحاولة'; });
+    if (submitting || inFlight || !dirty) return;
+    inFlight = true;
+    fetch('/student/quiz/' + QID + '/save', { method: 'POST', body: new FormData(form) })
+      .then(function (r) {
+        if (r.status === 200 || r.status === 204) return true;
+        throw new Error('status ' + r.status);
+      })
+      .then(function () {
+        inFlight = false; dirty = false; lastSaved = new Date(); clearLocal(); render();
+      })
+      .catch(function () {
+        // فشل الإرسال: نُبقي النسخة المحلّية ونصدُق في الرسالة، ونعيد لاحقاً.
+        inFlight = false; backupLocal(); render();
+      });
   }
-  function schedule() { clearTimeout(timer); timer = setTimeout(save, 1500); }
-  form.addEventListener('input', schedule);
-  form.addEventListener('change', schedule);
+
+  function onEdit() {
+    dirty = true; backupLocal(); render();
+    clearTimeout(timer);
+    timer = setTimeout(save, 3000);   // ح-١٦: مهلة أطول تقلّل تردّد الحفظ تحت الحمل.
+  }
+  form.addEventListener('input', onEdit);
+  form.addEventListener('change', onEdit);
+  form.addEventListener('submit', function () { submitting = true; clearLocal(); });
   setInterval(save, 20000);
-  // مؤشّر انقطاع الشبكة (المرحلة ٦): يطمئن المتعلّم أنّ عمله محفوظ ويعيد الحفظ عند العودة.
-  function netState() {
-    if (navigator.onLine) { banner.classList.remove('show'); save(); }
-    else { banner.classList.add('show'); }
+
+  window.addEventListener('online', function () { render(); save(); });
+  window.addEventListener('offline', render);
+  window.addEventListener('beforeunload', function (e) {
+    if (dirty && !submitting) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // استعادة نسخة محلّية لم تصل الخادم (انقطاع سابق أو إغلاق مفاجئ) ثمّ إعادة الإرسال.
+  function setField(name, vals) {
+    var el = form.elements[name];
+    if (!el) return;
+    if (el.tagName === undefined && el.length !== undefined) {   // RadioNodeList
+      Array.prototype.forEach.call(el, function (node) {
+        if (node.type === 'radio' || node.type === 'checkbox')
+          node.checked = vals.indexOf(node.value) !== -1;
+      });
+    } else {
+      el.value = vals[0];
+    }
   }
-  window.addEventListener('online', netState);
-  window.addEventListener('offline', netState);
+  (function restoreLocal() {
+    var raw;
+    try { raw = localStorage.getItem(LS_KEY); } catch (e) { return; }
+    if (!raw) return;
+    try {
+      var saved = JSON.parse(raw);
+      Object.keys(saved.data).forEach(function (k) { setField(k, saved.data[k]); });
+    } catch (e) { clearLocal(); return; }
+    // وجودُ نسخة محلّية يعني أنّ حفظاً سابقاً لم يكتمل: علّمها غير محفوظة وأعد الإرسال.
+    dirty = true; render(); save();
+  })();
 })();
 </script>
 {% endblock %}
