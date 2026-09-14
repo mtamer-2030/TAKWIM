@@ -12,7 +12,7 @@
   {% set path = request.url.path %}
   {% set nav = [
     ('/admin', 'اللوحة', path == '/admin'),
-    ('/admin/quizzes', 'التقاويم', path.startswith('/admin/quizzes')),
+    ('/admin/quizzes', 'التقويمات', path.startswith('/admin/quizzes')),
     ('/admin/sessions', 'الجلسات', path.startswith('/admin/sessions')),
     ('/admin/grading', 'التصحيح', path.startswith('/admin/grading') or path.endswith('/grade')),
     ('/admin/gradebook', 'التقارير', path.startswith('/admin/gradebook')),

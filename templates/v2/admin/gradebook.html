@@ -21,7 +21,7 @@
 
 {% if data and data.has_data %}
   <div class="card mb-3"><div class="card-body">
-    <h3 class="card-title">تطوّر معدّل القسم عبر التقاويم
+    <h3 class="card-title">تطوّر معدّل القسم عبر التقويمات
       {% if data.class_overall is not none %}<span class="text-secondary">— المعدّل العامّ {{ data.class_overall }}٪</span>{% endif %}
     </h3>
     <canvas id="classTrend" height="90"></canvas>
@@ -65,7 +65,7 @@
   <p class="text-secondary mt-2" style="font-size:.85rem">
     النِّسب من الأسئلة المصادَق عليها فقط. اضغط اسم التلميذ لتقريره الفرديّ التراكميّ. 🩺 = تقويم تشخيصي.</p>
 {% else %}
-  <div class="alert alert-info">لا تقاويم مصادَق عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً من «التقاويم بالأسئلة ← تصحيح».</div>
+  <div class="alert alert-info">لا تقويمات مصادَق عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً من «التقويمات بالأسئلة ← تصحيح».</div>
 {% endif %}
 {% endblock %}
 {% block chartjs %}<script src="/static/vendor/chart.umd.min.js" defer></script>{% endblock %}

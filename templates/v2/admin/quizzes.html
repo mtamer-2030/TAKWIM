@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
-{% block title %}التقاويم بالأسئلة · PHILO-TECH{% endblock %}
+{% block title %}التقويمات بالأسئلة · PHILO-TECH{% endblock %}
 {% block content %}
-<h2 class="h2 mb-3">التقاويم بالأسئلة (مغلقة/مفتوحة + تغذية راجعة)</h2>
+<h2 class="h2 mb-3">التقويمات بالأسئلة (مغلقة/مفتوحة + تغذية راجعة)</h2>
 
 {% if saved %}<div class="alert alert-success">{{ saved }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" style="white-space:pre-wrap">{{ error }}</div>{% endif %}
@@ -85,7 +85,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="6" class="text-secondary">لا تقاويم بعد. استورد ملفّاً أعلاه.</td></tr>
+    <tr><td colspan="6" class="text-secondary">لا تقويمات بعد. استورد ملفّاً أعلاه.</td></tr>
   {% endfor %}
   </tbody>
 </table>
