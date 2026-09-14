@@ -27,7 +27,7 @@ from ..cloud_ai import CloudAIUnavailable, cloud_available, extract_quiz_cloud
 from ..database import AsyncSessionLocal
 from ..docx_import import parse_docx, parse_lines
 from ..docx_template import build_template_docx
-from ..importer import ImporterError, extract_text, parse_students_excel
+from ..importer import ImporterError, extract_text, parse_marks_excel, parse_students_excel
 from ..models import (
     Answer,
     Axis,
@@ -1563,11 +1563,24 @@ async def session_close(request: Request, sid: int):
 
 @router.post("/sessions/{sid}/delete")
 async def session_delete(request: Request, sid: int):
+    """حذف جلسةٍ (تجريبيّة غير رسميّة مثلاً) مع **أثرها في التقارير**: تُحذف أجوبةُ
+    المشاركين فيها لأسئلة هذا التقويم، فلا تبقى نقطُ التجربة في دفتر النقط. (لا يمسّ
+    أجوبة تلاميذَ غير مشاركين، ولا أسئلة التقويم نفسه — يبقى قابلاً لإعادة التمرير.)"""
     if (g := require_admin(request)):
         return g
     async with AsyncSessionLocal() as s:
-        await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
-        await s.commit()
+        sess = await s.get(QuizSession, sid)
+        if sess is not None:
+            part_ids = (await s.execute(select(SessionStudent.student_id)
+                        .where(SessionStudent.session_id == sid))).scalars().all()
+            qids = (await s.execute(select(QuizQuestion.id)
+                    .where(QuizQuestion.quiz_id == sess.quiz_id))).scalars().all()
+            if part_ids and qids:
+                await s.execute(sa_delete(Answer).where(
+                    Answer.student_id.in_(part_ids),
+                    Answer.quiz_question_id.in_(qids)))
+            await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
+            await s.commit()
     return RedirectResponse("/admin/sessions", status_code=303)
 
 
@@ -1639,6 +1652,75 @@ async def session_unlock(request: Request, sid: int, part_id: int):
             p.device_token = None      # يسمح بمطالبة جديدة من أي جهاز
             await s.commit()
     return RedirectResponse(f"/admin/sessions/{sid}/live", status_code=303)
+
+
+# ═══════════════ استيراد لائحة النقط الحقيقيّة (فرض/تمرين ورقيّ) ═══════════════
+
+
+@router.get("/marks", response_class=HTMLResponse)
+async def marks_page(request: Request):
+    """صفحة استيراد لائحة نقطٍ حقيقيّة (فرض ورقيّ) بأرقام مسار — تدخل دفتر النقط والرادار."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+    return templates.TemplateResponse(
+        "admin/marks.html",
+        _ctx(request, groups=groups,
+             ok=request.query_params.get("ok"),
+             matched=request.query_params.get("matched"),
+             skipped=request.query_params.get("skipped")))
+
+
+@router.post("/marks/import", response_class=HTMLResponse)
+async def marks_import(request: Request, title: str = Form(...),
+                       max_score: float = Form(20.0), kind: str = Form("exam"),
+                       group: str = Form(""), file: UploadFile = File(...)):
+    """يستورد لائحة نقطٍ (رمز مسار + النقطة) لفرضٍ كامل: يُنشئ تقويماً بسؤالٍ واحدٍ
+    بسلّمه، ويُسند نقطة كلّ تلميذٍ كنقطةٍ يدويّةٍ مصادَقٍ عليها — فتظهر مباشرةً في دفتر
+    النقط وتقرير التلميذ ورادار الفوج. بلا أيّ تغييرٍ للمخطّط."""
+    if (g := require_admin(request)):
+        return g
+    data = await file.read()
+    parsed = parse_marks_excel(data, getattr(file, "filename", "") or "")
+    async with AsyncSessionLocal() as s:
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+        if not parsed.ok:
+            return templates.TemplateResponse(
+                "admin/marks.html",
+                _ctx(request, groups=groups, error="؛ ".join(parsed.errors)),
+                status_code=400)
+        maxs = float(max_score) if max_score and float(max_score) > 0 else 20.0
+        quiz = Quiz(title=title.strip() or "فرض", kind=(kind or "exam"),
+                    group_name=(group.strip() or None), published=False,
+                    reveal_feedback=False)
+        s.add(quiz)
+        await s.flush()
+        q = QuizQuestion(quiz_id=quiz.id, position=0, qtype="long_text",
+                         prompt=title.strip() or "النقطة", payload={}, max_score=maxs)
+        s.add(q)
+        await s.flush()
+        matched = 0
+        skipped: list[str] = []
+        for row in parsed.rows:
+            st = await s.scalar(select(Student).where(
+                Student.massar_code == row.massar_code))
+            if st is None:
+                skipped.append(row.massar_code)
+                continue
+            score = max(0.0, min(maxs, float(row.score)))
+            s.add(Answer(quiz_question_id=q.id, student_id=st.id,
+                         raw={"text": "نقطة مستورَدة"}, manual_score=score,
+                         teacher_confirmed=True, submitted=True))
+            matched += 1
+        await s.commit()
+    warn = ("&skipped=" + quote(str(len(skipped)))) if skipped else ""
+    return RedirectResponse(
+        f"/admin/marks?ok=1&matched={matched}{warn}", status_code=303)
 
 
 # ═══════════════ التقارير التراكمية (دفتر النقط عبر الموسم) ═══════════════

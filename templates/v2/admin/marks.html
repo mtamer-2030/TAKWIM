@@ -1,0 +1,67 @@
+{% extends "admin/base.html" %}
+{% block title %}استيراد النقط · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-3">استيراد لائحة النقط (فرض/تمرين ورقيّ)</h2>
+
+{% if ok %}
+<div class="alert alert-success">
+  تمّ الاستيراد: أُسندت <b>{{ matched }}</b> نقطة.
+  {% if skipped %}<span class="text-danger">تعذّر مطابقة {{ skipped }} رمز مسار (غير مسجّل).</span>{% endif %}
+  <a href="/admin/gradebook" class="btn btn-sm btn-outline-primary ms-2">→ دفتر النقط</a>
+</div>
+{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <p class="text-secondary">
+    ارفع ملفّ Excel أو CSV يحوي عمودَين على الأقلّ: <b>رمز مسار</b> و<b>النقطة</b>.
+    يُنشأ تقويمٌ بنقطةٍ واحدة لكلّ تلميذ (مصادَقٌ عليها فوراً)، فيظهر في دفتر النقط
+    وتقرير التلميذ ورادار الفوج مثل أيّ تقويمٍ رقميّ.
+  </p>
+  <form method="post" action="/admin/marks/import" enctype="multipart/form-data" class="row g-2">
+    <div class="col-md-5">
+      <label class="form-label">اسم الفرض/التمرين</label>
+      <input name="title" class="form-control" required placeholder="مثال: الفرض المحروس 1">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">السلّم (على)</label>
+      <input name="max_score" type="number" step="0.5" min="1" value="20" class="form-control">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">النوع</label>
+      <select name="kind" class="form-select">
+        <option value="exam">فرض</option>
+        <option value="exercise">تمرين</option>
+        <option value="diagnostic">تشخيصي</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">الفوج (اختياري)</label>
+      <select name="group" class="form-select">
+        <option value="">— كلّ الأفواج —</option>
+        {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-8">
+      <label class="form-label">ملفّ النقط (Excel/CSV)</label>
+      <input name="file" type="file" accept=".xlsx,.xls,.csv" class="form-control" required>
+    </div>
+    <div class="col-md-4 d-flex align-items-end">
+      <button class="btn btn-primary w-100">استيراد النقط</button>
+    </div>
+  </form>
+</div></div>
+
+<div class="alert alert-info">
+  <b>مثال لأعمدة الملفّ:</b>
+  <table class="table table-sm mt-2 mb-0" style="max-width:24rem">
+    <thead><tr><th>رمز مسار</th><th>النقطة</th></tr></thead>
+    <tbody>
+      <tr><td dir="ltr">D161055238</td><td>14.5</td></tr>
+      <tr><td dir="ltr">R987654321</td><td>11</td></tr>
+    </tbody>
+  </table>
+  <div class="mt-2 text-secondary">تُقبَل الفاصلة العشريّة العربيّة/الفرنسيّة (12,5 = 12.5).
+  رمز المسار يطابق ما استوردتَه في لائحة التلاميذ.</div>
+</div>
+{% endblock %}

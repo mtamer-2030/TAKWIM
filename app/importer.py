@@ -208,7 +208,89 @@ _COLS = {
                "رقم التلميذ", "الرمز", "رمز التلميذ"],
     "group": ["group", "group_name", "القسم", "الفوج", "المجموعة", "classe"],
     "level": ["level", "المستوى", "المستوى الدراسي", "niveau"],
+    "score": ["score", "note", "النقطة", "النقط", "التنقيط", "نقطة", "العلامة",
+              "النتيجة", "mark", "الدرجة"],
 }
+
+
+@dataclass
+class MarkRow:
+    line: int
+    massar_code: str
+    score: float
+    full_name: str | None = None
+
+
+@dataclass
+class MarksImport:
+    ok: bool = True
+    errors: list[str] = field(default_factory=list)
+    rows: list[MarkRow] = field(default_factory=list)
+
+
+def _read_table(data: bytes, filename: str):
+    """يقرأ Excel أو CSV إلى DataFrame نصّيّ (كلّ الخلايا str) — يدعم الصيغتين معاً."""
+    import pandas as pd
+    name = (filename or "").lower()
+    if name.endswith(".csv") or name.endswith(".txt"):
+        return pd.read_csv(io.BytesIO(data), dtype=str)
+    try:
+        return pd.read_excel(io.BytesIO(data), dtype=str)
+    except Exception:                       # قد يكون CSV بامتداد مبهم
+        return pd.read_csv(io.BytesIO(data), dtype=str)
+
+
+def parse_marks_excel(data: bytes, filename: str = "") -> MarksImport:
+    """يقرأ لائحة نقطٍ (رمز مسار + النقطة) من Excel/CSV ويعيد صفوفاً — بلا كتابة.
+
+    يحتاج عمودَي «رمز مسار» و«النقطة» (بأيّ من المرادفات العربيّة/الفرنسيّة). النقطة
+    تُقبَل بفاصلةٍ عشريّة عربيّة/فرنسيّة (12,5 = 12.5). الصفوف بلا مسارٍ أو نقطةٍ تُتجاهَل.
+    """
+    result = MarksImport()
+    try:
+        import pandas as pd  # noqa: F401
+    except ImportError:  # pragma: no cover
+        result.ok = False
+        result.errors.append("مكتبة pandas غير مثبّتة.")
+        return result
+    try:
+        df = _read_table(data, filename)
+    except Exception as e:
+        result.ok = False
+        result.errors.append(f"تعذّرت قراءة الملفّ: {e}")
+        return result
+
+    cols = _match_columns(list(df.columns))
+    missing = [k for k in ("massar", "score") if k not in cols]
+    if missing:
+        want = {"massar": "رمز مسار", "score": "النقطة"}
+        result.ok = False
+        result.errors.append(
+            "لم يُعثر على عمود: " + "، ".join(want[m] for m in missing)
+            + ". يجب أن يحوي الملفّ عمودَي «رمز مسار» و«النقطة».")
+        return result
+
+    for idx, raw in df.iterrows():
+        line = int(idx) + 2
+        massar = raw.get(cols["massar"])
+        massar = "" if massar is None else str(massar).strip()
+        sval = raw.get(cols["score"])
+        sval = "" if sval is None else str(sval).strip().replace(",", ".")
+        if not massar or massar.lower() == "nan" or not sval or sval.lower() == "nan":
+            continue
+        try:
+            score = float(sval)
+        except ValueError:
+            result.errors.append(f"السطر {line}: نقطةٌ غير رقميّة «{sval}» (تُجوهِلت).")
+            continue
+        name = raw.get(cols.get("full_name")) if cols.get("full_name") else None
+        name = None if name is None or str(name).strip().lower() == "nan" else str(name).strip()
+        result.rows.append(MarkRow(line=line, massar_code=massar.upper(),
+                                   score=score, full_name=name))
+    if not result.rows and result.ok:
+        result.ok = False
+        result.errors.append("لا صفوف صالحة (رمز مسار + نقطة) في الملفّ.")
+    return result
 
 
 @dataclass

@@ -42,7 +42,7 @@
           <a class="btn btn-sm btn-outline-primary" href="/admin/sessions/{{ r.s.id }}">إدارة</a>
         {% endif %}
         <form method="post" action="/admin/sessions/{{ r.s.id }}/delete" style="display:inline"
-              onsubmit="return confirm('حذف الجلسة؟ (لا يحذف أجوبة التلاميذ)');">
+              onsubmit="return confirm('حذف الجلسة وكلّ أجوبة المشاركين فيها لهذا التقويم؟\nتُمحى نقطُ هذه الجلسة من التقارير. لا رجعة.');">
           <button class="btn btn-sm btn-outline-danger">حذف</button></form>
       </td>
     </tr>
