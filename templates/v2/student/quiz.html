@@ -3,26 +3,38 @@
 {% block body %}
 {% set saved = saved or {} %}
 <style>
-  /* مناطق لمس مريحة على الهاتف (المرحلة ٦): حدّ أدنى ~44px، خطّ أكبر. */
+  /* بطاقات خيارات قابلة للّمس، تُبرِز المختار (مناطق لمس ≥48px، المرحلة ٦). */
   #quizForm label { display: flex; align-items: center; gap: .6rem;
-    min-height: 44px; padding: .5rem .2rem; font-size: 1rem; cursor: pointer; }
+    min-height: 48px; padding: .6rem .8rem; font-size: 1rem; cursor: pointer;
+    border: 1.5px solid var(--st-border); border-radius: 12px; margin-bottom: .5rem;
+    background: #fff; transition: border-color .12s, background .12s; }
+  #quizForm label:active { background: var(--st-primary-050); }
+  #quizForm label:has(input:checked) { border-color: var(--st-primary); background: var(--st-primary-050); }
+  #quizForm label:has(input:checked) span { font-weight: 700; color: var(--st-primary); }
   #quizForm input[type=radio], #quizForm input[type=checkbox] {
-    width: 1.3rem; height: 1.3rem; flex: 0 0 auto; }
+    width: 1.35rem; height: 1.35rem; flex: 0 0 auto; accent-color: var(--st-primary); }
   #quizForm input[type=text], #quizForm textarea, #quizForm select {
-    min-height: 44px; font-size: 1rem; }
+    min-height: 46px; font-size: 1rem; width: 100%; padding: .6rem .7rem;
+    border: 1.5px solid var(--st-border); border-radius: 12px; }
+  #quizForm input[type=text]:focus, #quizForm textarea:focus, #quizForm select:focus {
+    outline: 0; border-color: var(--st-primary); box-shadow: 0 0 0 3px var(--st-primary-050); }
   #netBanner { position: sticky; top: 0; z-index: 5; display: none;
-    background: #c62828; color: #fff; text-align: center; padding: .5rem;
-    border-radius: .4rem; margin-bottom: .6rem; font-size: .9rem; }
+    background: var(--st-err); color: #fff; text-align: center; padding: .5rem;
+    border-radius: 10px; margin-bottom: .6rem; font-size: .9rem; }
   #netBanner.show { display: block; }
-  #qzProgress { position: sticky; top: 0; z-index: 4; background: #eef3fb;
-    border: 1px solid #cddcf3; border-radius: .4rem; padding: .5rem .7rem;
+  #qzProgress { position: sticky; top: 0; z-index: 4; background: var(--st-primary-050);
+    border: 1px solid #d6e2f6; border-radius: 12px; padding: .5rem .7rem;
     margin-bottom: .8rem; font-size: .9rem; display: flex; align-items: center; gap: .6rem; }
-  #qzProgress .bar { flex: 1; height: .5rem; background: #d5e2f5; border-radius: 1rem; overflow: hidden; }
-  #qzProgress .bar > i { display: block; height: 100%; width: 0; background: #0d47a1; transition: width .2s; }
-  #qzProgress .cnt { font-weight: 700; color: #0d47a1; white-space: nowrap; }
-  .qz-q.qz-unanswered { border-inline-start: 3px solid #f9a825; }
-  .qz-flag { display: none; font-size: .8rem; color: #b26a00; font-weight: 700; margin-bottom: .4rem; }
+  #qzProgress .bar { flex: 1; height: .55rem; background: #d5e2f5; border-radius: 1rem; overflow: hidden; }
+  #qzProgress .bar > i { display: block; height: 100%; width: 0;
+    background: linear-gradient(90deg, var(--st-primary), var(--st-primary-2)); transition: width .25s; }
+  #qzProgress .cnt { font-weight: 800; color: var(--st-primary); white-space: nowrap; }
+  .qz-q.qz-unanswered { border-inline-start: 3px solid var(--st-warn); }
+  .qz-flag { display: none; font-size: .8rem; color: var(--st-warn); font-weight: 700; margin-bottom: .4rem; }
   .qz-q.qz-unanswered .qz-flag { display: block; }
+  .qz-num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem;
+    border-radius: 8px; background: var(--st-primary); color: #fff; font-size: .85rem;
+    font-weight: 700; margin-inline-end: .4rem; vertical-align: middle; }
 </style>
 <div class="pt-shell">
   <div class="pt-header">
@@ -40,21 +52,22 @@
     {% set ns = namespace(qn=0) %}
     {% for q in quiz.questions %}
       {% if q.qtype == 'heading' %}
-        <h4 style="margin:1.4rem 0 .6rem;color:#0d47a1;font-weight:800;border-bottom:2px solid #cddcf3;padding-bottom:.3rem">{{ q.prompt }}</h4>
+        <h4 style="margin:1.4rem 0 .6rem;color:var(--st-primary);font-weight:800;border-bottom:2px solid #d6e2f6;padding-bottom:.35rem">{{ q.prompt }}</h4>
       {% elif q.qtype == 'passage' %}
-        <div style="background:#f6f8fc;border-inline-start:4px solid #0d47a1;border-radius:.5rem;padding:.8rem 1rem;margin-bottom:1rem;line-height:1.9;white-space:pre-wrap">{{ q.prompt }}</div>
+        <div style="background:#fbfcfe;border-inline-start:4px solid var(--st-primary);border-radius:12px;padding:.9rem 1rem;margin-bottom:1rem;line-height:1.95;white-space:pre-wrap;border:1px solid #eef1f6">{{ q.prompt }}</div>
       {% else %}
       {% set a = saved.get(q.id) or {} %}
       {% set ns.qn = ns.qn + 1 %}
       <div class="pt-card qz-q" data-qid="{{ q.id }}" style="margin-bottom:1rem">
         <div class="qz-flag">⚠ لم تُجب بعد</div>
-        <div style="font-weight:700;margin-bottom:.5rem">{{ ns.qn }}. {{ q.prompt }}
-          <span class="muted" style="font-weight:400;font-size:.8rem">({{ q.max_score }} ن)</span>
+        <div style="font-weight:700;margin-bottom:.6rem;line-height:1.7">
+          <span class="qz-num">{{ ns.qn }}</span>{{ q.prompt }}
+          <span class="st-pill info" style="font-weight:700">{{ q.max_score }} ن</span>
         </div>
         {% if q.stimulus %}
-          <div style="background:#eef3fb;border-inline-start:3px solid #0d47a1;padding:.6rem .7rem;border-radius:.4rem;margin-bottom:.6rem">
-            <div style="font-weight:700;font-size:.8rem;color:#0d47a1;margin-bottom:.2rem">النصّ:</div>
-            <div style="font-size:.95rem;line-height:1.8">{{ q.stimulus }}</div>
+          <div style="background:var(--st-primary-050);border-inline-start:3px solid var(--st-primary);padding:.6rem .7rem;border-radius:10px;margin-bottom:.6rem">
+            <div style="font-weight:700;font-size:.8rem;color:var(--st-primary);margin-bottom:.2rem">النصّ:</div>
+            <div style="font-size:.95rem;line-height:1.85">{{ q.stimulus }}</div>
           </div>
         {% endif %}
 
@@ -139,9 +152,7 @@
       {% endif %}
     {% endfor %}
       <div id="saveStatus" class="muted" style="font-size:.8rem;text-align:center;min-height:1.1rem;margin-bottom:.4rem"></div>
-      <button type="submit" style="width:100%;padding:.8rem;background:#0d47a1;color:#fff;border:none;border-radius:.5rem;font-size:1rem">
-        تسليم التقويم
-      </button>
+      <button type="submit" class="pt-btn">✓ تسليم التقويم</button>
     </form>
   </div>
 </div>
