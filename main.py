@@ -81,6 +81,21 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="PHILO-TECH", version="2.0.0", lifespan=lifespan)
 
+
+@app.middleware("http")
+async def _no_store_student(request, call_next):
+    """منع تخبئة صفحات التلميذ: بلا هذه الترويسة يخبّئ المتصفّح صفحة /student،
+    وإن انقطع وصول الهاتف لحظةً يعرض «نسخة offline» مجمّدةً لا تقبل الكتابة — فيظنّ
+    التلميذ أنّ لوحة المفاتيح معطّلة. مع no-store: إمّا الصفحة الحيّة أو خطأ اتصالٍ
+    صريحٌ يكشف أنّ العلّة في الشبكة لا في الواجهة."""
+    resp = await call_next(request)
+    if request.url.path.startswith("/student"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
+
+
 # رفع/تخزين الوسائط والملفّات الثابتة
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
