@@ -34,11 +34,47 @@ def normalize_quiz_json(data) -> dict:
 import re as _re
 
 # علامات خانات الاختيار: فارغة (خيار) ومملوءة (خيار صحيح مؤشَّر في المصدر).
-_BOX_EMPTY = "☐□▢◻◽⬜❑❒⧀○◯⭘⎔❏❎◼◾⁃"
-_BOX_CHECKED = "☑☒■◾✅✔✘●◉"
+# نشمل أشكالاً كثيرة تظهر في فروض Word: ☐ □ ▢ ⃞(محيط مربّع) ⬜ ○ …
+_BOX_EMPTY = ("☐□▢◻◽⬜❑❒⧀○◯"
+              "⭘⎔❏❎◼◾⁃⃞⬚▯▭"
+              "⚀⃣")
+_BOX_CHECKED = "☑☒■◾✅✔✓✘●◉✗"
 _BOX_ANY = _re.compile("[" + _BOX_EMPTY + _BOX_CHECKED + "]")
 _CHECKED_SET = set(_BOX_CHECKED)
 _LEAD = _re.compile(r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s*")
+
+# سطر خيار: يبدأ بخانة، أو بعلامة حرفيّة بين قوسين «(أ) (ب) (a)», أو نقطة تعداد.
+_OPT_MARK = _re.compile(
+    r"^\s*(?:[" + _BOX_EMPTY + _BOX_CHECKED + r"]|\(\s*[أ-يa-zA-Z]\s*\)|[-*•▪◦])\s*")
+
+
+def _is_option_line(line: str) -> bool:
+    """هل السطر خيارُ اختيارٍ؟ (يبدأ بعلامة خيار أو يحوي خانة والسطر ليس طويلاً)."""
+    if _OPT_MARK.match(line):
+        return True
+    return bool(_BOX_ANY.search(line)) and len(line) <= 220
+
+
+def _mcq_from_option_lines(prompt: str, opt_lines: list[str]) -> dict | None:
+    """يبني سؤال اختيار من نصّ السؤال وأسطر خياراته (العلامة قد تكون أوّل السطر أو آخره)."""
+    options, correct = [], []
+    for ol in opt_lines:
+        checked = any(ch in _CHECKED_SET for ch in ol)
+        text = _OPT_MARK.sub("", ol)                       # إزالة العلامة البادئة
+        text = _BOX_ANY.sub("", text).strip(" .،؛:|-–—\t")  # إزالة أيّ خانة متبقّية
+        if text:
+            if checked:
+                correct.append(len(options))
+            options.append(text)
+    if len(options) < 2:
+        return None
+    prompt = _LEAD.sub("", prompt).strip().rstrip(":：").strip() or "اختر"
+    multi = any(w in prompt for w in ("كل ", "كلّ", "جميع", "جميعها", "كلها", "كلّها")) \
+        or len(correct) > 1
+    return {"type": "mcq_multi" if multi else "mcq_single", "competency": None,
+            "prompt": prompt, "stimulus": None, "max_score": 2.0,
+            "options": options, "correct": correct, "payload": {},
+            "indicators": [], "penalties": [], "auto_scored": False}
 
 # كلمات ترويسة الورقة (مستوى/مادّة/مؤسّسة…) — أسطرها ليست أسئلة.
 _HEADER_KW = ("المستوى", "المادة", "المادّة", "المدة", "المدّة", "المؤسسة", "المؤسّسة",
@@ -195,14 +231,14 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
             questions.append(q or _open_q(_LEAD.sub("", ln).strip()))
             i += 1
             continue
-        # نصّ سؤال ربّما تلته خيارات في أسطر مستقلّة تبدأ بعلامة خانة.
+        # نصّ سؤال ربّما تلته خيارات في أسطر مستقلّة (خانة أوّل السطر أو «(أ)…⃞»).
         j = i + 1
         opt_lines = []
-        while j < n and _BOX_ANY.match(lines[j]):
+        while j < n and _is_option_line(lines[j]):
             opt_lines.append(lines[j])
             j += 1
         if len(opt_lines) >= 2:
-            q = _mcq_from_text(ln, " ".join(opt_lines))
+            q = _mcq_from_option_lines(ln, opt_lines)
             questions.append(q or _open_q(_LEAD.sub("", ln).strip()))
             i = j
             continue
