@@ -1425,15 +1425,39 @@ async def session_live_status(request: Request, sid: int):
         sess = (await s.execute(
             select(QuizSession).where(QuizSession.id == sid)
             .options(selectinload(QuizSession.participants).selectinload(SessionStudent.student)))).scalar_one_or_none()
-    if sess is None:
-        return HTMLResponse("—", status_code=404)
+        if sess is None:
+            return HTMLResponse("—", status_code=404)
+        # تقدّم كلّ تلميذ آنيّاً: كم سؤالاً أجاب وأين وقف (آخر سؤال) من مجموع الأسئلة
+        # القابلة للإجابة (تُستثنى العناوين/النصوص). يُحسب من مسوّدات الأجوبة المحفوظة.
+        qqs = (await s.execute(
+            select(QuizQuestion.id, QuizQuestion.qtype)
+            .where(QuizQuestion.quiz_id == sess.quiz_id)
+            .order_by(QuizQuestion.position))).all()
+        answerable = [qid for qid, qt in qqs if qt not in DISPLAY_TYPES]
+        total_q = len(answerable)
+        qnum = {qid: i + 1 for i, qid in enumerate(answerable)}   # ترقيم متسلسل كالتلميذ
+        # لا تُنشَأ أسطر أجوبة فارغة (ح-١٣)، فوجود سطر = إجابة فعليّة على السؤال.
+        answered: dict[int, set[int]] = {}
+        if answerable:
+            for stu_id, qq_id in (await s.execute(
+                select(Answer.student_id, Answer.quiz_question_id)
+                .where(Answer.quiz_question_id.in_(answerable)))).all():
+                answered.setdefault(stu_id, set()).add(qq_id)
     parts = sorted(sess.participants, key=lambda p: p.student.full_name)
-    rows = [{"p": p, "name": p.student.full_name, "status": _live_status(p)} for p in parts]
+    rows = []
+    for p in parts:
+        done_ids = answered.get(p.student_id, set())
+        done = len(done_ids)
+        last = max((qnum[q] for q in done_ids), default=0)   # أبعد سؤال بلغه
+        rows.append({"p": p, "name": p.student.full_name, "status": _live_status(p),
+                     "done": done, "total": total_q, "last": last,
+                     "pct": round(done * 100 / total_q) if total_q else 0})
     present = sum(1 for p in parts if p.present)
     submitted = sum(1 for p in parts if p.submitted_at)
     return templates.TemplateResponse(
         "admin/_session_live_status.html",
-        _ctx(request, sid=sid, sess=sess, rows=rows, present=present, submitted=submitted))
+        _ctx(request, sid=sid, sess=sess, rows=rows, present=present,
+             submitted=submitted, total_q=total_q))
 
 
 @router.post("/sessions/{sid}/unlock/{part_id}")
