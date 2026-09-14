@@ -48,7 +48,7 @@ from ..models import (
 )
 from ..backup import backup_bytes, try_backup_quiet
 from .. import presence
-from ..netinfo import lan_url
+from ..netinfo import lan_ips, lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
@@ -205,20 +205,42 @@ async def open_session_badge(request: Request):
 # ═══════════════ رمز QR لربط هواتف التلاميذ ═══════════════
 
 
+def _all_student_urls() -> list[str]:
+    """كلّ عناوين الحاسوب المكتشَفة كروابط دخولٍ للتلميذ. حين يحمل الحاسوب أكثر من
+    بطاقة/شبكة (سلكيّ + WiFi + وهميّ) لا نعرف مسبقاً أيُّها يطابق شبكةَ الهواتف، فنعرضها
+    كلَّها ليجرّب الأستاذ الصحيح — الحلّ الجذريّ لـ«يعرض نسخة offline» (عنوانٌ لا يصله الهاتف)."""
+    port = settings.port
+    ips = lan_ips()
+    urls = [f"http://{ip}:{port}" for ip in ips]
+    if not urls:
+        urls = [_student_url()]
+    return urls
+
+
 @router.get("/qr", response_class=HTMLResponse)
 async def qr_page(request: Request):
-    """صفحة رمز QR ثابت: يعرضه الأستاذ على السبّورة أو يطبعه ليمسحه التلاميذ."""
+    """صفحة رمز QR: تعرض كلَّ عناوين الحاسوب المكتشَفة (لا عنواناً واحداً) — فإن كان
+    الهاتف على شبكةٍ فرعيّة مختلفة يختار الأستاذ العنوان المطابق بدل تخمين."""
     if (g := require_admin(request)):
         return g
-    return templates.TemplateResponse("admin/qr.html", _ctx(request, url=_student_url()))
+    urls = _all_student_urls()
+    return templates.TemplateResponse(
+        "admin/qr.html", _ctx(request, url=urls[0], urls=urls))
 
 
 @router.get("/qr.png")
 async def qr_png_route(request: Request):
-    """صورة رمز QR (PNG) تُولَّد محلّياً — لا إنترنت ولا CDN."""
+    """صورة رمز QR (PNG) تُولَّد محلّياً — لا إنترنت ولا CDN. يقبل ?ip= لعنوانٍ بعينه
+    (مُتحقَّقٌ منه ضمن العناوين المكتشَفة فقط) ليكون لكلّ عنوانٍ رمزُه الخاصّ."""
     if (g := require_admin(request)):
         return g
-    return Response(content=qr_png(_student_url()), media_type="image/png")
+    ip = (request.query_params.get("ip") or "").strip()
+    port = settings.port
+    if ip and f"http://{ip}:{port}" in _all_student_urls():
+        url = f"http://{ip}:{port}"
+    else:
+        url = _student_url()
+    return Response(content=qr_png(url), media_type="image/png")
 
 
 @router.get("/connected")

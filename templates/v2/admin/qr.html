@@ -9,18 +9,34 @@
   </p>
 </div>
 
-<div class="card">
-  <div class="card-body text-center">
-    <img src="/admin/qr.png" alt="رمز QR" width="300" height="300"
-         style="max-width:300px;image-rendering:pixelated">
-    <div class="mt-3">
-      <div class="text-secondary">العنوان الذي يشير إليه الرمز:</div>
-      <div class="h3" dir="ltr"><a href="{{ url }}">{{ url }}</a></div>
-    </div>
-    <div class="mt-3 d-print-none">
-      <button class="btn btn-primary" onclick="window.print()">🖨️ طباعة الرمز</button>
+{% if urls and urls|length > 1 %}
+<div class="alert alert-warning d-print-none">
+  <b>حاسوبك على أكثر من شبكة</b> ({{ urls|length }} عناوين). إن رأى الهاتف
+  «نسخة offline» أو «تعذّر الاتصال»، فالعنوان لا يطابق شبكة الهاتف — <b>جرّب رمزاً
+  آخر</b> من التالية. العنوان الصحيح يشارك الهاتفَ أوّلَ ثلاثة أرقام (مثل
+  <code dir="ltr">192.168.0.__</code>). تحقّق من عنوان الهاتف: الإعدادات ← WiFi ← الشبكة.
+</div>
+{% endif %}
+
+<div class="row g-3">
+  {% for u in (urls or [url]) %}
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body text-center">
+        {% set ip = u.split('//')[1].split(':')[0] %}
+        <img src="/admin/qr.png?ip={{ ip }}" alt="رمز QR {{ ip }}" width="260" height="260"
+             style="max-width:260px;image-rendering:pixelated">
+        <div class="mt-3">
+          <div class="text-secondary">العنوان:</div>
+          <div class="h3" dir="ltr"><a href="{{ u }}/student">{{ u }}/student</a></div>
+        </div>
+      </div>
     </div>
   </div>
+  {% endfor %}
+</div>
+<div class="mt-3 d-print-none">
+  <button class="btn btn-primary" onclick="window.print()">🖨️ طباعة</button>
 </div>
 
 <div class="card mt-3 d-print-none" style="border-color:#12489e">

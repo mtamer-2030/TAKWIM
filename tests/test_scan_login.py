@@ -147,6 +147,28 @@ def test_admin_cards_and_per_student_qr(monkeypatch):
     assert png.media_type == "image/png" and png.body[:4] == b"\x89PNG"
 
 
+def test_qr_page_lists_all_detected_networks(monkeypatch):
+    """صفحة QR تعرض كلَّ عناوين الحاسوب المكتشَفة (لا واحداً) — ليختار الأستاذ العنوان
+    المطابق لشبكة الهواتف حين يحمل الحاسوب أكثر من بطاقة/شبكة."""
+    from app.v2 import admin as admin_mod
+    cap = {}
+    monkeypatch.setattr(admin_mod, "lan_ips", lambda: ["192.168.0.92", "192.168.11.104"])
+    monkeypatch.setattr(admin_mod.settings, "port", 8000)
+    monkeypatch.setattr(
+        admin_mod.templates, "TemplateResponse",
+        lambda name, ctx: cap.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+
+    async def run():
+        return await admin_mod.qr_page(_admin_req())
+
+    asyncio.run(run())
+    assert cap["name"] == "admin/qr.html"
+    assert cap["urls"] == ["http://192.168.0.92:8000", "http://192.168.11.104:8000"]
+    # رمز QR لعنوانٍ بعينه يُقبَل فقط إن كان ضمن المكتشَف (لا حقن عناوين).
+    good = admin_mod._all_student_urls()
+    assert "http://192.168.0.92:8000" in good and "http://192.168.11.104:8000" in good
+
+
 def test_connected_endpoint_reports_count(monkeypatch):
     from app.v2 import admin as admin_mod
     presence.reset()

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uvicorn
 
-from app.netinfo import lan_ip
+from app.netinfo import lan_ip, lan_ips
 from app.settings import settings
 
 
@@ -35,6 +35,7 @@ def _startup_banner() -> None:
     بيانات جوّال لا يُسقِط الهاتفُ شبكةَ الراوتر المعزولة (بلا إنترنت) ويصل للنظام.
     """
     ip = lan_ip()
+    ips = lan_ips()
     port = settings.port
     line = "═" * 60
     print(f"\n{line}")
@@ -42,6 +43,14 @@ def _startup_banner() -> None:
     if ip:
         print(f"  📱 عنوان دخول التلاميذ:  http://{ip}:{port}/student")
         print(f"  🖥️  لوحة الأستاذ:         http://{ip}:{port}/admin   (رمز QR: /admin/qr)")
+        # إن تعدّدت الشبكات: اعرضها كلَّها ليجرّب الأستاذ العنوان المطابق لشبكة الهواتف
+        # (سببُ «يعرض نسخة offline»: الهاتف على شبكةٍ فرعيّة لا تصل لهذا العنوان).
+        others = [x for x in ips if x != ip]
+        if others:
+            print("  ── حاسوبك على أكثر من شبكة؛ إن لم يصل الهاتف جرّب:")
+            for x in others:
+                print(f"       http://{x}:{port}/student")
+            print("     (الصحيح يشارك الهاتفَ أوّلَ ثلاثة أرقام، مثل 192.168.0.__)")
     else:
         print("  ⚠️  تعذّر كشف عنوان الشبكة — تأكّد من وصل الحاسوب بالراوتر.")
     print("  ────────────────────────────────────────────────")
