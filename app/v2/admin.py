@@ -11,7 +11,7 @@ import json
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import case, delete as sa_delete, func, select
 
 from ..ai_feedback import (
     AIUnavailable,
@@ -914,6 +914,27 @@ async def quizzes_import_save(request: Request):
     saved_title, n = await _save_normalized_quiz(normalized, lid, group_name)
     return RedirectResponse(
         f"/admin/quizzes?saved=تمّ استيراد «{saved_title}» بـ{n} سؤالاً.", status_code=303)
+
+
+@router.get("/grading", response_class=HTMLResponse)
+async def grading_center(request: Request):
+    """قسم التصحيح: كلّ تقويم فيه أجوبة مُسلَّمة، مع عدد المُسلَّم والمنتظِر للمصادقة،
+    ورابطٌ مباشر لشاشة تصحيحه. مركزٌ واضح بدل أزرار متفرّقة."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        rows = (await s.execute(
+            select(Quiz.id, Quiz.title, Quiz.group_name,
+                   func.count(Answer.id),
+                   func.sum(case((Answer.teacher_confirmed.is_(False), 1), else_=0)))
+            .join(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
+            .join(Answer, Answer.quiz_question_id == QuizQuestion.id)
+            .where(Answer.submitted.is_(True))
+            .group_by(Quiz.id).order_by(Quiz.created_at.desc()))).all()
+    items = [{"id": r[0], "title": r[1], "group": r[2], "submitted": r[3],
+              "pending": int(r[4] or 0)} for r in rows]
+    return templates.TemplateResponse(
+        "admin/grading.html", _ctx(request, items=items))
 
 
 @router.get("/quizzes/template")

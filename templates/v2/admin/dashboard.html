@@ -45,10 +45,10 @@
             <div class="h1 m-0">{{ today.sessions }}</div>
             <div class="text-secondary" style="font-size:.85rem">جلسات اليوم</div>
           </div></div>
-          <div class="col-4"><div class="text-center">
+          <div class="col-4"><a href="/admin/grading" class="text-center d-block" style="text-decoration:none;color:inherit">
             <div class="h1 m-0 {% if today.ungraded %}text-orange{% endif %}">{{ today.ungraded }}</div>
-            <div class="text-secondary" style="font-size:.85rem">تنتظر التصحيح</div>
-          </div></div>
+            <div class="text-secondary" style="font-size:.85rem">تنتظر التصحيح ←</div>
+          </a></div>
           <div class="col-4"><div class="text-center">
             <div class="h1 m-0 {% if today.not_submitted %}text-red{% endif %}">{{ today.not_submitted }}</div>
             <div class="text-secondary" style="font-size:.85rem">حاضر لم يُسلّم</div>

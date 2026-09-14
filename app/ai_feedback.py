@@ -87,12 +87,14 @@ def ollama_available() -> bool:
 
 
 def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None,
-              num_predict: int = 350, num_ctx: int | None = None) -> str:
+              num_predict: int = 350, num_ctx: int | None = None,
+              timeout: int | None = None) -> str:
     """نداء Ollama /api/generate. يرفع AIUnavailable عند أي تعذّر اتصال/مهلة.
 
     fmt="json" يقيّد المخرَج بمخطّط JSON (بدل تفكيكه بـ regex) — للتصحيح المُعان.
     num_predict: سقف طول المخرَج (يُرفَع للاستخراج المطوّل مثل استخراج تقويم كامل).
     num_ctx: نافذة السياق؛ تُرفَع لاستخراج فرضٍ طويل لئلّا يُقتطع نصّه قبل التوليد.
+    timeout: مهلة الطلب بالثواني؛ تُرفَع للاستخراج المطوّل على المعالج (بلا بطاقة رسوم).
     """
     cfg = settings.local_ai
     if not cfg.enabled:
@@ -113,7 +115,8 @@ def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None,
     if fmt:
         payload["format"] = fmt   # "json" → مخرَج JSON صالح مضمون من Ollama
     try:
-        resp = httpx.post(f"{cfg.base_url}/api/generate", json=payload, timeout=cfg.timeout)
+        resp = httpx.post(f"{cfg.base_url}/api/generate", json=payload,
+                          timeout=timeout or cfg.timeout)
         resp.raise_for_status()
         data = resp.json()
         text = (data.get("response") or "").strip()
@@ -242,6 +245,6 @@ def extract_quiz_json(raw_text: str) -> str:
     text = (raw_text or "").strip()
     if not text:
         raise AIUnavailable("النصّ فارغ — لا محتوى لاستخراجه.")
-    # نافذة سياق واسعة: نصّ الفرض (~٢٦٠٠ كلمة) + المخرَج، لئلّا يُقتطع قبل الهيكلة.
+    # نافذة سياق واسعة + مهلة طويلة: النموذج على المعالج بطيء، فلا نقطع قبل الاكتمال.
     return _generate(SYSTEM_EXTRACT, text[:8000], fmt="json",
-                     num_predict=3072, num_ctx=8192)
+                     num_predict=3072, num_ctx=8192, timeout=1800)

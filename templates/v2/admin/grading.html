@@ -1,0 +1,33 @@
+{% extends "admin/base.html" %}
+{% block title %}التصحيح · PHILO-TECH{% endblock %}
+{% block content %}
+<h2 class="h2 mb-1">التصحيح</h2>
+<p class="text-secondary">التقاويم التي سلّم التلاميذ فيها. المغلقة مُصحَّحة يقينيّاً؛
+  افتح التصحيح لمراجعة المفتوحة والمصادقة (وزرّ الذكاء الاصطناعيّ لاقتراح نقطها).</p>
+
+<div class="card">
+<div class="table-responsive"><table class="table table-vcenter">
+  <thead><tr><th>التقويم</th><th>الفوج</th><th>أجوبة مُسلَّمة</th><th>تنتظر المصادقة</th><th></th></tr></thead>
+  <tbody>
+  {% for it in items %}
+    <tr>
+      <td><strong>{{ it.title }}</strong></td>
+      <td>{{ it.group or '—' }}</td>
+      <td>{{ it.submitted }}</td>
+      <td>
+        {% if it.pending %}<span class="badge bg-orange">{{ it.pending }}</span>
+        {% else %}<span class="badge bg-green">مكتمل ✓</span>{% endif %}
+      </td>
+      <td class="text-end">
+        <a class="btn btn-sm {{ 'btn-primary' if it.pending else 'btn-outline-primary' }}"
+           href="/admin/quizzes/{{ it.id }}/grade">فتح التصحيح ←</a>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary text-center py-4">
+      لا أجوبة مُسلَّمة بعد. ستظهر التقاويم هنا فور تسليم التلاميذ.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+</div>
+{% endblock %}
