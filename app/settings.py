@@ -23,6 +23,19 @@ class LocalAI:
     timeout: int = 300
 
 
+@dataclass
+class CloudAI:
+    """محرّك سحابيّ قويّ (Claude) لاستيراد أيّ بنية فرضٍ وقت التحضير (يحتاج إنترنت).
+
+    لا يُستعمَل في الفصل (الجلسة تبقى محلّية offline)، بل عند تحويل ملفّ الفرض إلى
+    أسئلة مهيكلة. المفتاح من config.ini [cloud_ai] api_key أو من متغيّر البيئة
+    ANTHROPIC_API_KEY. غيابه لا يعطّل النظام — يرجع تلقائيّاً للمحلّل القاعديّ.
+    """
+    api_key: str = ""
+    model: str = "claude-sonnet-5"
+    timeout: int = 120
+
+
 DEFAULT_PASSWORD = "change-me-please"
 
 
@@ -35,6 +48,7 @@ class Settings:
     public_url: str = "http://192.168.1.50:8000"
     secret_key: str = ""              # سرّ توقيع الكوكيز (يُحلّ في load_settings)
     local_ai: LocalAI = field(default_factory=LocalAI)
+    cloud_ai: CloudAI = field(default_factory=CloudAI)
 
 
 def _hash_password(raw: str) -> str:
@@ -98,6 +112,15 @@ def load_settings() -> Settings:
             model=cp.get("local_ai", "model", fallback="qwen2.5:3b-instruct"),
             timeout=cp.getint("local_ai", "timeout", fallback=300),
         )
+    # المفتاح السحابيّ: من config.ini أو من متغيّر البيئة ANTHROPIC_API_KEY.
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    model = s.cloud_ai.model
+    timeout = s.cloud_ai.timeout
+    if cp.has_section("cloud_ai"):
+        api_key = (cp.get("cloud_ai", "api_key", fallback="") or api_key).strip()
+        model = cp.get("cloud_ai", "model", fallback=model).strip() or model
+        timeout = cp.getint("cloud_ai", "timeout", fallback=timeout)
+    s.cloud_ai = CloudAI(api_key=api_key, model=model, timeout=timeout)
     return s
 
 

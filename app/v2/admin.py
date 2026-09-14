@@ -22,6 +22,7 @@ from ..ai_feedback import (
     ping_generate,
     suggest_open_score,
 )
+from ..cloud_ai import CloudAIUnavailable, cloud_available, extract_quiz_cloud
 from ..database import AsyncSessionLocal
 from ..docx_import import parse_docx, parse_lines
 from ..docx_template import build_template_docx
@@ -675,7 +676,8 @@ def _review_page(request: Request, *, title: str, kind: str, questions: list[dic
         _ctx(request, r_title=title, r_kind=kind, questions=questions,
              level_id=level_id, group_name=group_name, note=note,
              errors=errors or [], raw_text=raw_text, answers_text=answers_text,
-             ai_online=ai_online, competencies=list(COMPETENCIES.items())))
+             ai_online=ai_online, cloud_online=cloud_available(),
+             competencies=list(COMPETENCIES.items())))
 
 
 _AI_TYPE_MAP = {"heading": "heading", "passage": "passage",
@@ -738,9 +740,9 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
     """رفع تقويم (JSON/Word/PDF/صورة) + ملفّ عناصر إجابة اختياريّ → أسئلة.
 
     (١) يقينيّ — JSON/قالب Word يُحلَّل حرفيّاً فيُحفَظ مباشرةً.
-    (٢) ذكيّ بملفّين — إن رُفِع ملفّ عناصر الإجابة: يدمج المحرّك المحلّي الفرض وعناصره
-        فيولّد أسئلة مفتوحة/مغلقة بمؤشّرات نجاح للتصحيح الآليّ، للمراجعة.
-    (٣) متسامح — وإلّا: تحليل قاعديّ يقينيّ (بلا اتصال) للمراجعة."""
+    (٢) ذكيّ سحابيّ — إن هُيّئ مفتاح Claude: يحوّل **أيّ بنية** فرضٍ إلى أسئلة مع
+        الأجوبة الصحيحة ومؤشّرات النجاح (وقت التحضير، يحتاج إنترنت)، للمراجعة.
+    (٣) متسامح — وإلّا: تحليل قاعديّ يقينيّ (بلا اتصال) + إسناد عناصر الإجابة بالترقيم."""
     if (g := require_admin(request)):
         return g
     data = await file.read()
@@ -766,14 +768,32 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
     if afn:
         answers_text = _extract_upload_text(afn, await answers_file.read())
 
-    # المسار اليقينيّ (فوريّ، بلا ذكاء اصطناعيّ): تحليل قاعديّ للفرض يحفظ النصّ
-    # الفلسفيّ والعناوين ويكشف الاختيار. إن رُفِع ملفّ عناصر الإجابة أُسنِدت عناصره
-    # للأسئلة المفتوحة بالترقيم — كلّه محلّيّ وفوريّ، لا انتظار للمحرّك.
+    # (٢) الاستيراد الذكيّ السحابيّ (وقت التحضير، يحتاج إنترنت): يعالج **أيّ بنية** فرضٍ
+    #     — عناوين ونصوص وأسئلة وأجوبة صحيحة ومؤشّرات — عبر نموذج Claude قويّ. يُشغَّل
+    #     تلقائيّاً حين يكون المفتاح مهيّأً. إن تعذّر، نمرّ للتحليل القاعديّ (لا يضيع العمل).
+    cloud_note = ""
+    if cloud_available():
+        try:
+            title, questions = _ai_json_to_questions(
+                await asyncio.to_thread(extract_quiz_cloud, raw, answers_text))
+            if not questions:
+                raise CloudAIUnavailable("لم يُرجِع النموذج أسئلة صالحة.")
+            note = ("هيكلة ذكيّة لأيّ بنية فرضٍ: أسئلة مفتوحة/مغلقة مع الأجوبة الصحيحة "
+                    "ومؤشّرات النجاح. راجِعها وصادِق عليها قبل الحفظ.")
+            return _review_page(request, title=title, kind="exercise", questions=questions,
+                                level_id=level_id, group_name=group_name, note=note,
+                                raw_text=raw, answers_text=answers_text)
+        except (CloudAIUnavailable, ValueError, json.JSONDecodeError) as exc:
+            cloud_note = f"تعذّر الاستيراد الذكيّ السحابيّ: {exc}"
+
+    # (٣) المسار اليقينيّ (فوريّ، بلا اتصال): تحليل قاعديّ يحفظ النصّ الفلسفيّ والعناوين
+    # ويكشف الاختيار. إن رُفِع ملفّ عناصر الإجابة أُسنِدت عناصره للأسئلة المفتوحة بالترقيم.
     parsed = heuristic_quiz_from_text(raw, title_hint=hint)
     if not parsed["questions"]:
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
+    errs = [cloud_note] if cloud_note else None
     if answers_text.strip():
         matched = attach_answer_elements(parsed["questions"], answers_text)
         if matched:
@@ -785,22 +805,24 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
                     "آليّاً — انسخ العناصر في خانة «عناصر الإجابة» لكلّ سؤال مفتوح ثمّ احفظ.")
         return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                             questions=parsed["questions"], level_id=level_id,
-                            group_name=group_name, note=note,
+                            group_name=group_name, note=note, errors=errs,
                             raw_text=raw, answers_text=answers_text)
 
     note = ("استُخرج الملفّ فوريّاً: خانات الاختيار، العناوين والنصوص الفلسفيّة، حذف "
             "أسطر الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي المفتوحة "
-            "اكتب **عناصر الإجابة** واختر **الكفاية**. (زرّ «استخراج ذكيّ» اختياريّ "
-            "وبطيء — للعتاد القويّ فقط؛ التصحيح الآليّ يبقى مهمّة المحرّك المحلّي.)")
+            "اكتب **عناصر الإجابة** واختر **الكفاية**. (للهيكلة الذكيّة لأيّ بنية: "
+            "هيّئ مفتاح Claude في config.ini ثمّ اضغط «استخراج ذكيّ».)")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
-                        group_name=group_name, note=note, raw_text=raw)
+                        group_name=group_name, note=note, errors=errs, raw_text=raw)
 
 
 @router.post("/quizzes/import/ai")
 async def quizzes_import_ai(request: Request):
-    """استخراج ذكيّ بالمحرّك المحلّي: يعيد هيكلة نصّ الفرض ويعرضها للمراجعة.
-    تدهور لطيف: إن أُغلق المحرّك يبقى التحليل القاعديّ ويُعرَض سبب التعذّر."""
+    """استخراج ذكيّ يعيد هيكلة نصّ الفرض لأيّ بنية ويعرضها للمراجعة.
+
+    يفضّل المحرّك السحابيّ القويّ (Claude) إن كان المفتاح مهيّأً — يعالج أيّ بنية؛
+    وإلّا يجرّب المحرّك المحلّي. تدهور لطيف: عند التعذّر يبقى التحليل القاعديّ ويُعرَض السبب."""
     if (g := require_admin(request)):
         return g
     form = await request.form()
@@ -808,6 +830,25 @@ async def quizzes_import_ai(request: Request):
     answers_text = form.get("answers_text") or ""
     level_id = (form.get("level_id") or "").strip()
     group_name = form.get("group_name") or ""
+
+    # (١) السحابيّ أوّلاً إن هُيّئ — يعالج أيّ بنية بدقّة وسرعة.
+    if cloud_available():
+        try:
+            title, questions = _ai_json_to_questions(
+                await asyncio.to_thread(extract_quiz_cloud, raw, answers_text))
+            if not questions:
+                raise CloudAIUnavailable("لم يُرجِع النموذج أسئلة صالحة.")
+            note = ("هيكلة ذكيّة لأيّ بنية — أسئلة مع الأجوبة الصحيحة ومؤشّرات النجاح. "
+                    "راجِعها وصادِق عليها قبل الحفظ.")
+            return _review_page(request, title=title, kind="exercise", questions=questions,
+                                level_id=level_id, group_name=group_name, note=note,
+                                raw_text=raw, answers_text=answers_text)
+        except (CloudAIUnavailable, json.JSONDecodeError, ValueError) as exc:
+            cloud_err = f"تعذّر الاستيراد الذكيّ السحابيّ: {exc}"
+    else:
+        cloud_err = ""
+
+    # (٢) المحلّي (Ollama) إن توفّر — أبطأ وأضعف، لكن بلا إنترنت.
     try:
         title, questions = _ai_json_to_questions(
             await asyncio.to_thread(extract_quiz_json, raw, answers_text))
@@ -818,14 +859,14 @@ async def quizzes_import_ai(request: Request):
                             level_id=level_id, group_name=group_name, note=note,
                             raw_text=raw, answers_text=answers_text)
     except (AIUnavailable, json.JSONDecodeError, ValueError) as exc:
-        # نرجع للتحليل القاعديّ مع رسالة واضحة (لا نفقد عمل الأستاذ).
+        # (٣) نرجع للتحليل القاعديّ مع رسالة واضحة (لا نفقد عمل الأستاذ).
         parsed = heuristic_quiz_from_text(raw, title_hint="")
+        errs = [e for e in (cloud_err, f"تعذّر الاستخراج المحلّي: {exc}") if e]
         return _review_page(
             request, title=parsed["title"], kind="exercise",
             questions=parsed["questions"], level_id=level_id, group_name=group_name,
-            raw_text=raw, answers_text=answers_text,
-            errors=[f"تعذّر الاستخراج الذكيّ: {exc}"],
-            note="عُرِض التحليل القاعديّ. شغّل Ollama بنموذج مناسب ثمّ أعِد المحاولة.")
+            raw_text=raw, answers_text=answers_text, errors=errs,
+            note="عُرِض التحليل القاعديّ. هيّئ مفتاح Claude للهيكلة الذكيّة لأيّ بنية.")
 
 
 _REVIEW_OPEN = ("long_text", "short_text")

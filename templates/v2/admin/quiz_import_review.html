@@ -25,11 +25,18 @@
   <input type="hidden" name="answers_text" value="{{ answers_text }}">
   <input type="hidden" name="level_id" value="{{ level_id }}">
   <input type="hidden" name="group_name" value="{{ group_name }}">
-  <button class="btn btn-outline-secondary btn-sm" {% if not ai_online %}disabled title="شغّل Ollama"{% endif %}>
-    ✨ إعادة هيكلة ذكيّة (اختياريّ){% if not ai_online %} — المحرّك غير مشغّل{% endif %}</button>
+  {% if cloud_online %}
+  <button class="btn btn-primary">✨ استخراج ذكيّ لأيّ بنية (Claude)</button>
   <span class="text-secondary" style="font-size:.85rem">
-    اختياريّ وبطيء (قد يفوق دقيقةً على العتاد الضعيف وقد يختصر النصّ) — التحليل
-    الفوريّ أعلاه كافٍ عادةً. يتجاهل تعديلاتك الحاليّة.</span>
+    يحوّل أيّ بنية فرضٍ إلى أسئلة مع الأجوبة الصحيحة ومؤشّرات النجاح (يحتاج إنترنت
+    وقت التحضير). يتجاهل تعديلاتك الحاليّة.</span>
+  {% else %}
+  <button class="btn btn-outline-secondary btn-sm" {% if not ai_online %}disabled{% endif %}>
+    ✨ استخراج ذكيّ محلّي{% if not ai_online %} — المحرّك غير مشغّل{% endif %}</button>
+  <span class="text-secondary" style="font-size:.85rem">
+    للهيكلة الذكيّة لأيّ بنية: هيّئ مفتاح Claude في config.ini قسم [cloud_ai]. المحلّي
+    بطيء وأضعف. يتجاهل تعديلاتك الحاليّة.</span>
+  {% endif %}
 </form>
 {% endif %}
 

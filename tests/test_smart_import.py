@@ -365,6 +365,91 @@ def test_attach_answer_elements_by_number():
     assert "elements" not in qs[2]                         # الاختيار لا يأخذ عناصر هنا
 
 
+def test_cloud_import_handles_any_structure(monkeypatch):
+    """الاستيراد السحابيّ (مُهيّأ) يعالج أيّ بنية: يُستدعى ويُعرَض ناتجه للمراجعة."""
+    prep = _setup(monkeypatch)
+    captured = {}
+    seen = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        monkeypatch.setattr(admin_mod, "extract_text",
+                            lambda fn, data: SimpleNamespace(text="فرض ببنية غريبة ❓"))
+        monkeypatch.setattr(admin_mod, "cloud_available", lambda: True)
+
+        def _fake_cloud(raw, ans=""):
+            seen["raw"], seen["ans"] = raw, ans
+            return ('{"title":"فرض","questions":['
+                    '{"type":"passage","prompt":"نصّ فلسفيّ محفوظ"},'
+                    '{"type":"mcq_single","prompt":"سؤال","options":["أ","ب"],"correct":1,'
+                    '"competency":"knowledge"},'
+                    '{"type":"long_text","prompt":"حلّل","max_score":6,'
+                    '"competency":"synthesis","elements":["الأطروحة","الحجاج"]}]}')
+        monkeypatch.setattr(admin_mod, "extract_quiz_cloud", _fake_cloud)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        await admin_mod.quizzes_import(
+            _req(), file=_UF("فرض.docx", b"x"), level_id=str(lid), group_name="")
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert seen["raw"]                                    # النصّ وصل للنموذج السحابيّ
+    assert captured["name"] == "admin/quiz_import_review.html"
+    types = [q["type"] for q in captured["questions"]]
+    assert types == ["passage", "mcq_single", "long_text"]
+    assert captured["questions"][1]["correct"] == [1]     # جواب صحيح مملوء
+    assert captured["questions"][2]["elements"] == ["الأطروحة", "الحجاج"]
+
+
+def test_cloud_import_falls_back_to_heuristic_on_error(monkeypatch):
+    """السحابيّ مُهيّأ لكن فشل (لا إنترنت مثلاً) → لا يضيع العمل: تحليل قاعديّ + سبب."""
+    prep = _setup(monkeypatch)
+    captured = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        from app.cloud_ai import CloudAIUnavailable
+        monkeypatch.setattr(admin_mod, "extract_text",
+                            lambda fn, data: SimpleNamespace(text=EXAM))
+        monkeypatch.setattr(admin_mod, "cloud_available", lambda: True)
+
+        def _boom(raw, ans=""):
+            raise CloudAIUnavailable("لا إنترنت")
+        monkeypatch.setattr(admin_mod, "extract_quiz_cloud", _boom)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        await admin_mod.quizzes_import(
+            _req(), file=_UF("فرض.docx", b"x"), level_id=str(lid), group_name="")
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert captured["name"] == "admin/quiz_import_review.html"
+    assert captured["errors"] and "السحابيّ" in captured["errors"][0]   # سبب واضح
+    assert captured["questions"]                                        # القاعديّ بقي
+
+
+def test_cloud_available_reads_key(monkeypatch):
+    """cloud_available يعكس وجود المفتاح في الإعداد."""
+    import app.cloud_ai as C
+    from app.settings import CloudAI
+    monkeypatch.setattr(C.settings, "cloud_ai", CloudAI(api_key="", model="claude-sonnet-5"))
+    assert C.cloud_available() is False
+    monkeypatch.setattr(C.settings, "cloud_ai", CloudAI(api_key="sk-ant-xxx", model="claude-sonnet-5"))
+    assert C.cloud_available() is True
+
+
+def test_cloud_extract_without_key_raises(monkeypatch):
+    """بلا مفتاح: يرفع CloudAIUnavailable برسالة إرشاديّة (لا ينهار)."""
+    import app.cloud_ai as C
+    from app.settings import CloudAI
+    monkeypatch.setattr(C.settings, "cloud_ai", CloudAI(api_key="", model="claude-sonnet-5"))
+    try:
+        C.extract_quiz_cloud("نصّ فرض")
+        assert False, "كان ينبغي رفع استثناء"
+    except C.CloudAIUnavailable as e:
+        assert "مفتاح" in str(e)
+
+
 def test_student_quiz_numbers_only_answerable(monkeypatch):
     """البند ٢: التلميذ يرى ترقيماً متسلسلاً للأسئلة فقط (العناوين/النصوص لا تُرقَّم)."""
     from types import SimpleNamespace as N
