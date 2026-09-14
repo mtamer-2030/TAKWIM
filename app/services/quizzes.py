@@ -228,6 +228,50 @@ def _is_prose_line(line: str) -> bool:
     return not _Q_VERB.match(_LEAD.sub("", line).strip())
 
 
+# مؤشّرات نجاح المقال الفلسفيّ المغربيّ (شبكة التصحيح: فهم/تحليل/مناقشة/تركيب).
+_ESSAY_INDICATORS = [
+    "الفهم: التأطير وطرح الإشكال",
+    "التحليل: الأطروحة والبنية المفاهيمية والحجاجية",
+    "المناقشة: القيمة والحدود والانفتاح على المواقف",
+    "التركيب: الخلاصة والاستنتاج والرأي الشخصيّ",
+    "سلامة اللغة وتنظيم الجواب",
+]
+
+
+def essay_models_from_text(text: str) -> list[dict] | None:
+    """يكشف بنية «القولة/المطلب» (فرض مقاليّ بنماذج، وقد يرافقه نموذج إجابة محلول)
+    فيستخرج لكلّ نموذجٍ سؤالاً إنشائيّاً: القولة سندٌ معروض، المطلب نصّ السؤال،
+    ومؤشّرات شبكة التصحيح الفلسفيّة عناصرَ إجابةٍ للتصحيح الآليّ. يعيد None إن لم تظهر."""
+    if "القولة" not in text or "المطلب" not in text:
+        return None
+    parts = _re.split(r"(?=^\s*النموذج\b)", text, flags=_re.M) or [text]
+    out: list[dict] = []
+    for part in parts:
+        p = part.strip()
+        if "القولة" not in p or "المطلب" not in p:
+            continue
+        label = None
+        m = _re.match(r"^\s*(النموذج[^\n:：]*)", p)
+        if m:
+            label = m.group(1).strip()
+        qm = _re.search(r"القولة\s*[:：]?\s*(.*?)(?=المطلب)", p, _re.S)
+        quote = qm.group(1).strip().strip("«»\"“”:،. \n\t") if qm else ""
+        pm = _re.search(r"المطلب\s*[:：]?\s*(.+)", p)
+        prompt = pm.group(1).strip().splitlines()[0].strip() if pm else ""
+        # نحذف ذيل نقاط الإجابة إن وُجد في سطر المطلب.
+        prompt = _re.sub(r"[.․‥…_ـ]{4,}.*$", "", prompt).strip()
+        if len(quote) < 8 or len(prompt) < 8:
+            continue
+        if label:
+            out.append(_as(label, "heading"))
+        q = _open_q(prompt)
+        q["stimulus"] = quote
+        q["max_score"] = 20.0
+        q["elements"] = list(_ESSAY_INDICATORS)
+        out.append(q)
+    return out or None
+
+
 def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     """محلّل متسامح يقينيّ: يحوّل نصّ فرض/تمرين عاديّاً إلى أسئلة مباشرةً.
 
@@ -235,6 +279,13 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
     (☐/☑) فيفصل نصّ السؤال عن خياراته (سواء في السطر نفسه أو في أسطر تالية)، ويجعل
     البقيّة أسئلة مفتوحة. لا يعرف الإجابة الصحيحة إن لم تكن مؤشَّرة في المصدر — يؤشّرها
     الأستاذ في شاشة المراجعة. بلا ذكاء اصطناعيّ وبلا اتصال؛ يعمل دائماً."""
+    title = (title_hint or "").strip() or "تقويم مستورد"
+    # بنية «القولة/المطلب» (فرض مقاليّ بنماذج) لها محلّلٌ متخصّص يحفظ القولة سنداً
+    # والمطلب سؤالاً ومؤشّرات التصحيح الفلسفيّة — قبل التحليل العامّ (سطراً سطراً).
+    essay = essay_models_from_text(text or "")
+    if essay:
+        return {"title": title, "kind": "exam", "level": None, "unit": None,
+                "concept": None, "stimuli": [], "questions": essay}
     # نقصّ ذيل أسطر الإجابة (سلسلة نقاط/خطوط ≥4) من كلّ سطر، فتنظُف السقالات
     # («*اسم البنية: .......» → «*اسم البنية:») وتُحذف أسطر الإجابة الفارغة كلّيّاً.
     lines = []
@@ -242,7 +293,6 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
         ln = _re.sub(r"[.․‥…_ـ]{4,}.*$", "", ln).strip(" *•-–—\t")
         if ln:
             lines.append(ln)
-    title = (title_hint or "").strip() or "تقويم مستورد"
 
     questions: list[dict] = []
     i = 0

@@ -59,3 +59,22 @@ def test_exam_07_kashida_numbering_recovers_questions():
     opens = [q for q in qs if q["type"] == "long_text"]
     assert len(opens) >= 5                               # الأسئلة الخمسة استُرجِعت
     assert any(q["type"] == "passage" for q in qs)       # نصّ فروم محفوظ
+
+
+def test_exam_08_essay_models_corpus():
+    """exam_08 (قولة/مطلب + نموذج إجابة محلول): كان ٣٦ عنصراً فوضويّاً؛ الآن ٣ أسئلة
+    إنشائيّة — القولة سندٌ معروض، المطلب سؤالٌ، ومؤشّرات شبكة التصحيح عناصرَ إجابة."""
+    qs = _parse(8)["questions"]
+    essays = [q for q in qs if q["type"] == "long_text"]
+    assert len(essays) == 3                              # النماذج الثلاثة
+    for q in essays:
+        assert q.get("stimulus") and len(q["stimulus"]) > 20   # القولة محفوظة سنداً
+        assert q.get("elements") and len(q["elements"]) >= 4   # مؤشّرات التصحيح
+        assert q["max_score"] == 20                            # مقال على ٢٠
+
+
+def test_essay_detector_does_not_trigger_without_markers():
+    """المحلّل المتخصّص لا يُفعَّل إلّا مع «القولة» و«المطلب» معاً (لا يمسّ بقيّة الفروض)."""
+    from app.services.quizzes import essay_models_from_text
+    assert essay_models_from_text("نصّ عاديّ بلا علامات") is None
+    assert essay_models_from_text("المطلب فقط بلا قولة") is None
