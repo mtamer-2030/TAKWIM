@@ -43,7 +43,8 @@
     {% if not it.is_display %}
     <label class="form-label">السلّم (النقطة القصوى)</label>
     <input name="q_{{ it.q.id }}_max" type="number" step="0.5" min="0"
-           class="form-control" style="max-width:8rem" value="{{ it.q.max_score }}">
+           class="form-control" style="max-width:8rem"
+           value="{{ it.q.max_score if it.q.max_score is not none else 0 }}">
     {% endif %}
   </div></div>
   {% else %}

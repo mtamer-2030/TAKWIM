@@ -80,3 +80,13 @@ def test_quiz_edit_updates_text_options_and_deletes(monkeypatch):
     assert mcq[4]["options"] == ["بديل خاطئ", "الجواب الصحيح", "بديل ثالث"]
     assert mcq[4]["correct"] == [1]                        # النجمة عيّنت الصحيح
     assert data[1][1] == "حلّل النصّ" and data[1][3] == 12.0
+
+
+def test_opts_text_handles_nonstring_and_none_payload():
+    """حصانةٌ ضدّ انهيار «صفحة بيضاء»: خياراتٌ رقميّة أو payload=None في تقويمٍ مستورَد."""
+    from app.v2.admin import _opts_text
+    q1 = QuizQuestion(qtype="mcq_single", prompt="س", position=0, max_score=1,
+                      payload={"options": ["أ", "ب", 3], "correct": [0, 2]})
+    assert _opts_text(q1) == "* أ\nب\n* 3"          # الرقم 3 حُوِّل نصّاً بلا انهيار
+    q2 = QuizQuestion(qtype="passage", prompt="نصّ", position=1, max_score=0, payload=None)
+    assert _opts_text(q2) == ""                       # payload=None لا يكسر

@@ -1169,11 +1169,16 @@ async def quiz_assign(request: Request, quiz_id: int, level_id: str = Form(""),
 
 
 def _opts_text(q: QuizQuestion) -> str:
-    """يبني نصّ الخيارات للمحرّر: سطرٌ لكلّ خيار، والصحيح مسبوقٌ بنجمة (*)."""
-    payload = q.payload or {}
+    """يبني نصّ الخيارات للمحرّر: سطرٌ لكلّ خيار، والصحيح مسبوقٌ بنجمة (*).
+    يحوّل كلّ خيارٍ إلى نصّ (بعض التقويمات المستورَدة تحمل خياراتٍ رقميّة)."""
+    payload = q.payload if isinstance(q.payload, dict) else {}
     options = payload.get("options") or []
     correct = set(payload.get("correct") or [])
-    return "\n".join(("* " + o) if i in correct else o for i, o in enumerate(options))
+    lines = []
+    for i, o in enumerate(options):
+        text = str(o)
+        lines.append(("* " + text) if i in correct else text)
+    return "\n".join(lines)
 
 
 @router.get("/quizzes/{quiz_id}/edit", response_class=HTMLResponse)
