@@ -1,0 +1,64 @@
+{% extends "admin/base.html" %}
+{% block title %}تعديل: {{ quiz.title }} · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">تعديل التقويم</h2>
+  <a class="btn btn-outline-secondary" href="/admin/quizzes">→ التقويمات</a>
+</div>
+
+{% if saved %}<div class="alert alert-success">حُفظت التعديلات ✓</div>{% endif %}
+
+<form method="post" action="/admin/quizzes/{{ quiz.id }}/edit">
+  <input type="hidden" name="qids" value="{{ items|map(attribute='q')|map(attribute='id')|join(',') }}">
+
+  <div class="card mb-3"><div class="card-body">
+    <label class="form-label">عنوان التقويم</label>
+    <input name="title" class="form-control" value="{{ quiz.title }}" required>
+  </div></div>
+
+  {% for it in items %}
+  <div class="card mb-2"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <span class="badge bg-blue-lt">سؤال {{ loop.index }} — {{ it.q.qtype }}</span>
+      <label class="form-check text-danger mb-0">
+        <input class="form-check-input" type="checkbox" name="q_{{ it.q.id }}_delete">
+        حذف هذا السؤال
+      </label>
+    </div>
+
+    <label class="form-label">النصّ / السؤال</label>
+    <textarea name="q_{{ it.q.id }}_prompt" class="form-control mb-2" rows="2">{{ it.q.prompt }}</textarea>
+
+    <label class="form-label">النصّ المرافق (اختياري)</label>
+    <textarea name="q_{{ it.q.id }}_stimulus" class="form-control mb-2" rows="2"
+              placeholder="نصّ قراءة/سند إن وُجد">{{ it.q.stimulus or '' }}</textarea>
+
+    {% if it.is_mcq %}
+    <label class="form-label">الخيارات (سطرٌ لكلّ خيار، ضع <code>*</code> قبل الصحيح)</label>
+    <textarea name="q_{{ it.q.id }}_options" class="form-control mb-2" rows="4"
+              dir="rtl" style="font-family:inherit">{{ it.opts_text }}</textarea>
+    <div class="text-secondary mb-2" style="font-size:.85rem">مثال: <code dir="ltr">* الجواب الصحيح</code> / <code dir="ltr">بديل خاطئ</code></div>
+    {% endif %}
+
+    {% if not it.is_display %}
+    <label class="form-label">السلّم (النقطة القصوى)</label>
+    <input name="q_{{ it.q.id }}_max" type="number" step="0.5" min="0"
+           class="form-control" style="max-width:8rem" value="{{ it.q.max_score }}">
+    {% endif %}
+  </div></div>
+  {% else %}
+  <div class="alert alert-info">هذا التقويم بلا أسئلة.</div>
+  {% endfor %}
+
+  <div class="d-flex gap-2 mb-4">
+    <button class="btn btn-primary">💾 حفظ التعديلات</button>
+    <a class="btn btn-outline-secondary" href="/admin/quizzes">إلغاء</a>
+  </div>
+</form>
+
+<div class="alert alert-info" style="font-size:.9rem">
+  <b>ملاحظات:</b> تعديل الخيارات متاحٌ لأسئلة الاختيار؛ الأنواع الأخرى (تصنيف/ترتيب/جدول)
+  تُحرَّر نصوصُها وسلّمها هنا وتبقى بنيتها كما هي. الأسئلة العرضيّة (عنوان/نصّ) بلا سلّم.
+  حذفُ سؤالٍ نهائيّ عند الحفظ.
+</div>
+{% endblock %}

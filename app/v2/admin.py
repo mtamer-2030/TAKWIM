@@ -1168,6 +1168,99 @@ async def quiz_assign(request: Request, quiz_id: int, level_id: str = Form(""),
     return RedirectResponse("/admin/quizzes", status_code=303)
 
 
+def _opts_text(q: QuizQuestion) -> str:
+    """يبني نصّ الخيارات للمحرّر: سطرٌ لكلّ خيار، والصحيح مسبوقٌ بنجمة (*)."""
+    payload = q.payload or {}
+    options = payload.get("options") or []
+    correct = set(payload.get("correct") or [])
+    return "\n".join(("* " + o) if i in correct else o for i, o in enumerate(options))
+
+
+@router.get("/quizzes/{quiz_id}/edit", response_class=HTMLResponse)
+async def quiz_edit_page(request: Request, quiz_id: int):
+    """محرّر التقويم المحفوظ: تعديل العنوان ونصوص الأسئلة والنصّ المرافق والسلّم
+    وخيارات الاختيار، وحذف سؤال — لإصلاح أخطاءٍ بعد الحفظ بلا إعادة استيراد."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id)
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("التقويم غير موجود", status_code=404)
+        qs = sorted(quiz.questions, key=lambda q: (q.position, q.id))
+        items = [{
+            "q": q,
+            "is_mcq": q.qtype in ("mcq_single", "mcq_multi"),
+            "is_display": q.qtype in DISPLAY_TYPES,
+            "opts_text": _opts_text(q),
+        } for q in qs]
+    return templates.TemplateResponse(
+        "admin/quiz_edit.html",
+        _ctx(request, quiz=quiz, items=items,
+             saved=request.query_params.get("saved")))
+
+
+@router.post("/quizzes/{quiz_id}/edit")
+async def quiz_edit_save(request: Request, quiz_id: int):
+    """يطبّق تعديلات المحرّر على التقويم المحفوظ."""
+    if (g := require_admin(request)):
+        return g
+    from sqlalchemy.orm import selectinload
+    form = await request.form()
+    async with AsyncSessionLocal() as s:
+        quiz = (await s.execute(
+            select(Quiz).where(Quiz.id == quiz_id)
+            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+        if quiz is None:
+            return HTMLResponse("التقويم غير موجود", status_code=404)
+        title = (form.get("title") or "").strip()
+        if title:
+            quiz.title = title
+        by_id = {q.id: q for q in quiz.questions}
+        for qid_str in (form.get("qids") or "").split(","):
+            if not qid_str.strip().isdigit():
+                continue
+            q = by_id.get(int(qid_str))
+            if q is None:
+                continue
+            if form.get(f"q_{q.id}_delete") == "on":
+                await s.delete(q)
+                continue
+            prompt = (form.get(f"q_{q.id}_prompt") or "").strip()
+            if prompt:
+                q.prompt = prompt
+            stim = (form.get(f"q_{q.id}_stimulus") or "").strip()
+            q.stimulus = stim or None
+            ms = form.get(f"q_{q.id}_max")
+            if ms not in (None, ""):
+                try:
+                    q.max_score = max(0.0, float(str(ms).replace(",", ".")))
+                except ValueError:
+                    pass
+            if q.qtype in ("mcq_single", "mcq_multi"):
+                options, correct = [], []
+                for line in (form.get(f"q_{q.id}_options") or "").splitlines():
+                    t = line.strip()
+                    if not t:
+                        continue
+                    is_c = t.startswith("*")
+                    t = t[1:].strip() if is_c else t
+                    if not t:
+                        continue
+                    if is_c:
+                        correct.append(len(options))
+                    options.append(t)
+                if len(options) >= 2 and correct:
+                    payload = dict(q.payload or {})
+                    payload["options"] = options
+                    payload["correct"] = correct
+                    q.payload = payload            # إسناد قاموسٍ جديد يُعلِّم العمود متغيّراً
+        await s.commit()
+    return RedirectResponse(f"/admin/quizzes/{quiz_id}/edit?saved=1", status_code=303)
+
+
 @router.post("/quizzes/{quiz_id}/delete")
 async def quiz_delete(request: Request, quiz_id: int):
     """حذف تقويم وكلّ أسئلته وأجوبته بالتتالي."""
