@@ -41,7 +41,12 @@ _BOX_EMPTY = ("☐□▢◻◽⬜❑❒⧀○◯"
 _BOX_CHECKED = "☑☒■◾✅✔✓✘●◉✗"
 _BOX_ANY = _re.compile("[" + _BOX_EMPTY + _BOX_CHECKED + "]")
 _CHECKED_SET = set(_BOX_CHECKED)
-_LEAD = _re.compile(r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—]?|[-*•])\s*")
+# ترقيم السؤال: رقم يتبعه فاصل. نشمل الكشيدة «ـ» (U+0640) لأنّ فروضاً تكتب «1ـ 2ـ».
+_LEAD = _re.compile(r"^\s*(?:(?:\d+|[٠-٩]+)\s*[).:\-–—؛ـ]|(?:السؤال|سؤال|س)\s*\d*\s*[).:\-–—ـ]?|[-*•])\s*")
+# علامة الجواب الصحيح في خيارات بلا خانات: «… (صحيح)» في آخر السطر.
+_CORRECT_MARK = _re.compile(r"\s*[\(（]\s*صحيحة?\s*[\)）]\s*$")
+# سطر «عناصر الإجابة: …» يُسنَد لآخر سؤال مفتوح مؤشّراتِ تصحيحٍ (لا يصير سؤالاً).
+_ELEMENTS_RE = _re.compile(r"^\s*عناصر\s+الإ?جابة\s*[:：]?\s*")
 
 # سطر خيار: يبدأ بخانة، أو بعلامة حرفيّة بين قوسين «(أ) (ب) (a)», أو نقطة تعداد.
 _OPT_MARK = _re.compile(
@@ -75,6 +80,39 @@ def _mcq_from_option_lines(prompt: str, opt_lines: list[str]) -> dict | None:
             "prompt": prompt, "stimulus": None, "max_score": 2.0,
             "options": options, "correct": correct, "payload": {},
             "indicators": [], "penalties": [], "auto_scored": False}
+
+
+def _is_plain_opt_candidate(line: str) -> bool:
+    """سطر يصلح خياراً بلا خانة: قصير، بلا خانات، لا ترقيم، لا ينتهي باستفهام/نقطتين.
+    لا نستبعد ما يبدأ بأداة سؤال (خياراتٌ تبدأ بـ«من/كيف/هل» شائعة). آمنٌ لأنّ المجموعة
+    لا تُعتمَد اختياراً إلّا إن حوت «(صحيح)»، فلا يبتلع النصوص أو الأسئلة."""
+    if not line or _BOX_ANY.search(line) or _NUM_START.match(line):
+        return False
+    if line.rstrip().endswith((":", "：", "؟")) or _is_header(line) or _is_section_title(line):
+        return False
+    return len(line) <= 90
+
+
+def _mcq_from_correct_lines(prompt: str, opt_lines: list[str]) -> dict | None:
+    """يبني اختياراً من خيارات بلا خانات، الصحيح فيها مؤشَّرٌ بـ«(صحيح)» في آخر السطر."""
+    options, correct = [], []
+    for ol in opt_lines:
+        is_correct = bool(_CORRECT_MARK.search(ol))
+        text = _CORRECT_MARK.sub("", ol).strip(" .،؛:|-–—\t")
+        if text:
+            if is_correct:
+                correct.append(len(options))
+            options.append(text)
+    if len(options) < 2:
+        return None
+    p = _LEAD.sub("", prompt).strip()
+    multi = "كل ما يصح" in p or "اختر كل" in p or "جميع" in p or len(correct) > 1
+    p = _re.sub(r"\s*[\(（][^)）]*يصح[^)）]*[\)）]", "", p).strip().rstrip(":：؟").strip() or "اختر"
+    return {"type": "mcq_multi" if multi else "mcq_single", "competency": None,
+            "prompt": p, "stimulus": None, "max_score": 2.0,
+            "options": options, "correct": correct, "payload": {},
+            "indicators": [], "penalties": [], "auto_scored": False}
+
 
 # كلمات ترويسة الورقة (مستوى/مادّة/مؤسّسة…) — أسطرها ليست أسئلة.
 _HEADER_KW = ("المستوى", "المادة", "المادّة", "المدة", "المدّة", "المؤسسة", "المؤسّسة",
@@ -134,7 +172,7 @@ def _as(prompt: str, qtype: str) -> dict:
 
 
 _SEP_RE = _re.compile(r"^[\s_\-–—=.·•*─-╿•]{4,}$")  # فاصل/سطر إجابة (نقاط/خطوط)
-_NUM_START = _re.compile(r"^\s*(?:\d+|[٠-٩]+)\s*[).:\-–—]")   # يبدأ بترقيم (سؤال/قسم)
+_NUM_START = _re.compile(r"^\s*(?:\d+|[٠-٩]+)\s*[).:\-–—ـ]")   # يبدأ بترقيم (سؤال/قسم)
 _AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _POINTS_RE = _re.compile(r"\(\s*([\d.,٠-٩]+)\s*(?:نقاط|نقطة|نقط|ن)\s*\)")
 
@@ -185,7 +223,7 @@ def _is_prose_line(line: str) -> bool:
     سؤال، وليس ترويسةً ولا عنوان قسم. تُجمَع أسطر النثر المتتالية في نصٍّ واحد."""
     if not line or _BOX_ANY.search(line) or line.endswith("؟") or _NUM_START.match(line):
         return False
-    if _is_header(line) or _is_section_title(line):
+    if _is_header(line) or _is_section_title(line) or _ELEMENTS_RE.match(line):
         return False
     return not _Q_VERB.match(_LEAD.sub("", line).strip())
 
@@ -217,11 +255,36 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
             if _SEP_RE.match(ln):
                 i += 1
                 continue
+            # «عناصر الإجابة: …» → تُسنَد مؤشّراتٍ لآخر سؤال مفتوح (لا تصير سؤالاً).
+            if _ELEMENTS_RE.match(ln):
+                body = _ELEMENTS_RE.sub("", ln).strip(" :：.-")
+                elems = [e.strip(" .،؛-") for e in _re.split(r"[،؛]", body)
+                         if len(e.strip()) >= 3]
+                for q in reversed(questions):
+                    if q["type"] in ("long_text", "short_text"):
+                        if elems:
+                            q["elements"] = elems
+                        break
+                i += 1
+                continue
             if _is_header(ln) or _is_section_title(ln):
                 clean, _ = _extract_points(_LEAD.sub("", ln).strip())
                 questions.append(_as(clean, "heading"))
                 i += 1
                 continue
+            # خيارات بلا خانات مؤشَّرٌ صوابها بـ«(صحيح)»: نصّ السؤال يتلوه أسطر الخيارات.
+            # آمنٌ لأنّه لا يُفعَّل إلّا بوجود «(صحيح)» فلا يبتلع النصوص أو الأسئلة المفتوحة.
+            j = i + 1
+            cand = []
+            while j < n and _is_plain_opt_candidate(lines[j]):
+                cand.append(lines[j])
+                j += 1
+            if len(cand) >= 2 and any(_CORRECT_MARK.search(c) for c in cand):
+                q = _mcq_from_correct_lines(ln, cand)
+                if q:
+                    questions.append(q)
+                    i = j
+                    continue
             if _is_prose_line(ln):
                 # نجمع أسطر النثر المتتالية في نصٍّ واحد للقراءة (لا يضيع النصّ الفلسفيّ
                 # لأنّ أسطره فُرادى قصيرة). نعتمده نصّاً فقط إن بلغ المجموع طولاً معتبراً.
