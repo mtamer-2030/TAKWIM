@@ -1115,7 +1115,23 @@ async def grading_center(request: Request):
     items = [{"id": r[0], "title": r[1], "group": r[2], "submitted": r[3],
               "pending": int(r[4] or 0)} for r in rows]
     return templates.TemplateResponse(
-        "admin/grading.html", _ctx(request, items=items))
+        "admin/grading.html",
+        _ctx(request, items=items, cleared=request.query_params.get("cleared")))
+
+
+@router.post("/grading/{quiz_id}/clear")
+async def grading_clear_answers(request: Request, quiz_id: int):
+    """يحذف **كلّ أجوبة** هذا التقويم (أيّاً كان مصدرها) — لإزالة أجوبةٍ عالقةٍ ناتجةٍ
+    عن جلساتٍ مشوّهة أو غير مكتملة أو محذوفة. لا يمسّ أسئلة التقويم نفسه، فيبقى قابلاً
+    لإعادة التمرير من جديد. لا رجعة في حذف الأجوبة."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        qids = select(QuizQuestion.id).where(QuizQuestion.quiz_id == quiz_id)
+        res = await s.execute(sa_delete(Answer).where(Answer.quiz_question_id.in_(qids)))
+        await s.commit()
+    n = res.rowcount if res.rowcount is not None else 0
+    return RedirectResponse(f"/admin/grading?cleared={n}", status_code=303)
 
 
 @router.get("/quizzes/template")

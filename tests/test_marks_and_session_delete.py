@@ -160,3 +160,47 @@ def test_session_delete_purges_participant_answers(monkeypatch):
     remaining, sessions, names = asyncio.run(go())
     assert sessions == []                              # الجلسة حُذفت
     assert len(remaining) == 1 and names == {"غير مشارك"}   # أثر المشارك فقط مُحي
+
+
+def test_grading_clear_answers_removes_stuck_answers(monkeypatch):
+    """زرّ «حذف الأجوبة» في قائمة التصحيح يمسح كلّ أجوبة تقويمٍ (جلسات مشوّهة) ويُبقي
+    أسئلته وأجوبةَ تقويمٍ آخر."""
+    from app.v2 import admin as admin_mod
+
+    async def go():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        S = async_sessionmaker(eng, expire_on_commit=False)
+        monkeypatch.setattr(admin_mod, "AsyncSessionLocal", S)
+        async with S() as s:
+            lv = Level(name="ج", code="TC"); s.add(lv); await s.flush()
+            st = Student(full_name="ت", level_id=lv.id, group_name="TC1", active=True)
+            s.add(st); await s.flush()
+            qa = Quiz(title="مشوّه", kind="exam", level_id=lv.id)
+            qb = Quiz(title="سليم", kind="exam", level_id=lv.id)
+            s.add_all([qa, qb]); await s.flush()
+            a1 = QuizQuestion(quiz_id=qa.id, qtype="mcq_single", prompt="س", payload={},
+                              max_score=1, position=0)
+            b1 = QuizQuestion(quiz_id=qb.id, qtype="mcq_single", prompt="س", payload={},
+                              max_score=1, position=0)
+            s.add_all([a1, b1]); await s.flush()
+            s.add(Answer(quiz_question_id=a1.id, student_id=st.id, raw={"choice": 0},
+                         auto_score=1, teacher_confirmed=True, submitted=True))
+            s.add(Answer(quiz_question_id=b1.id, student_id=st.id, raw={"choice": 0},
+                         auto_score=1, teacher_confirmed=True, submitted=True))
+            await s.commit()
+            qa_id, aq_id, bq_id = qa.id, a1.id, b1.id
+        resp = await admin_mod.grading_clear_answers(_admin_req(), qa_id)
+        async with S() as s:
+            ans = (await s.execute(select(Answer))).scalars().all()
+            qq = (await s.execute(select(QuizQuestion))).scalars().all()
+            left_qids = {a.quiz_question_id for a in ans}
+        await eng.dispose()
+        return resp, len(ans), left_qids, aq_id, bq_id, len(qq)
+
+    resp, n_ans, left_qids, aq_id, bq_id, n_qq = asyncio.run(go())
+    assert getattr(resp, "status_code", None) == 303
+    assert "cleared=1" in resp.headers["location"]     # حُذفت إجابة واحدة
+    assert n_ans == 1 and left_qids == {bq_id}          # بقيت أجوبة التقويم السليم فقط
+    assert n_qq == 2                                    # الأسئلة لم تُمسّ (التقويم يبقى)

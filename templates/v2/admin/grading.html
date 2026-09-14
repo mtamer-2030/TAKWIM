@@ -5,6 +5,10 @@
 <p class="text-secondary">التقويمات التي سلّم التلاميذ فيها. المغلقة مُصحَّحة يقينيّاً؛
   افتح التصحيح لمراجعة المفتوحة والمصادقة (وزرّ الذكاء الاصطناعيّ لاقتراح نقطها).</p>
 
+{% if cleared is not none %}
+<div class="alert alert-success">حُذفت {{ cleared }} إجابة عالقة. اختفى التقويم من القائمة إن لم تبقَ له أجوبة.</div>
+{% endif %}
+
 <div class="card">
 <div class="table-responsive"><table class="table table-vcenter">
   <thead><tr><th>التقويم</th><th>الفوج</th><th>أجوبة مُسلَّمة</th><th>تنتظر المصادقة</th><th></th></tr></thead>
@@ -18,9 +22,12 @@
         {% if it.pending %}<span class="badge bg-orange">{{ it.pending }}</span>
         {% else %}<span class="badge bg-green">مكتمل ✓</span>{% endif %}
       </td>
-      <td class="text-end">
+      <td class="text-end" style="white-space:nowrap">
         <a class="btn btn-sm {{ 'btn-primary' if it.pending else 'btn-outline-primary' }}"
            href="/admin/quizzes/{{ it.id }}/grade">فتح التصحيح ←</a>
+        <form method="post" action="/admin/grading/{{ it.id }}/clear" style="display:inline"
+              onsubmit="return confirm('حذف كلّ الأجوبة ({{ it.submitted }}) لهذا التقويم؟\nلإزالة أجوبةٍ عالقةٍ من جلساتٍ مشوّهة أو غير مكتملة. لا رجعة.');">
+          <button class="btn btn-sm btn-outline-danger">🗑 حذف الأجوبة</button></form>
       </td>
     </tr>
   {% else %}
