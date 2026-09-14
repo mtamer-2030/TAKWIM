@@ -460,8 +460,9 @@ def test_student_quiz_numbers_only_answerable(monkeypatch):
           N(id=4, qtype="long_text", prompt="سؤال ب", max_score=4, stimulus=None, payload={})]
     quiz = N(id=7, title="ت", questions=qs)
     html = templates.get_template("student/quiz.html").render(quiz=quiz, saved={})
-    assert "1. سؤال أ" in html and "2. سؤال ب" in html   # ترقيم ١ ثمّ ٢ (لا ٢ و٤)
-    assert "3. سؤال" not in html
+    # ترقيم متسلسل للأسئلة القابلة للجواب فقط (شارة qz-num): ١ ثمّ ٢ (لا ٢ و٤).
+    assert 'qz-num">1</span>سؤال أ' in html and 'qz-num">2</span>سؤال ب' in html
+    assert 'qz-num">3</span>' not in html
 
 
 def test_save_open_with_competency_and_elements(monkeypatch):
