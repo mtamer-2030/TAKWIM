@@ -242,9 +242,13 @@ def extract_quiz_json(raw_text: str) -> str:
 
     fmt=json يضمن JSON صالحاً نحويّاً؛ قد لا يطابق المخطّط تماماً فيُراجَع في شاشة
     التحرير. يرفع AIUnavailable إن أُغلق المحرّك (تدهور لطيف: يبقى تحليل النظام القاعديّ)."""
-    text = (raw_text or "").strip()
+    text = (raw_text or "").strip()[:8000]
     if not text:
         raise AIUnavailable("النصّ فارغ — لا محتوى لاستخراجه.")
-    # نافذة سياق واسعة + مهلة طويلة: النموذج على المعالج بطيء، فلا نقطع قبل الاكتمال.
-    return _generate(SYSTEM_EXTRACT, text[:8000], fmt="json",
-                     num_predict=3072, num_ctx=8192, timeout=1800)
+    # نافذة السياق تُقاس على حجم الفرض لا ثابتة كبيرة (٨١٩٢ كانت تُثقل ذاكرة البطاقة
+    # فيهرب جزءٌ للمعالج ويبطؤ). تقدير عربيّ ~٣ أحرف/رمز + سقف مخرَج معقول.
+    num_predict = 2048
+    approx_in = len(text) // 3
+    num_ctx = min(8192, max(4096, approx_in + num_predict + 512))
+    return _generate(SYSTEM_EXTRACT, text, fmt="json",
+                     num_predict=num_predict, num_ctx=num_ctx, timeout=1800)
