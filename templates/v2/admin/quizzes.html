@@ -14,27 +14,37 @@
     الأسئلة ويصنّفها، ثمّ تُعرَض عليك <b>لمراجعتها وتصحيحها قبل الحفظ</b> — اقتراحٌ
     تصادق عليه، لا حكم. (للاستخراج الآليّ شغّل Ollama؛ بدونه استعمل قالب Word أو JSON.)
   </p>
+  <p class="text-secondary" style="font-size:.9rem">
+    💡 <b>اختياريّاً</b>: أرفِق كذلك <b>ملفّ عناصر الإجابة</b> (Word/PDF/نصّ). حينها يقرأ
+    النظام الملفّين معاً ويولّد الأسئلة المفتوحة والمغلقة <b>مع مؤشّرات النجاح</b> جاهزةً
+    للتصحيح الآليّ بالذكاء المحلّي — تبقى بانتظار مصادقتك.
+  </p>
   <form method="post" action="/admin/quizzes/import" enctype="multipart/form-data">
     <div class="row">
-      <div class="col-md-5 mb-2">
-        <label class="form-label">الملفّ (JSON / Word / PDF / صورة)</label>
+      <div class="col-md-4 mb-2">
+        <label class="form-label">ملفّ الفرض (JSON / Word / PDF / صورة)</label>
         <input type="file" name="file" class="form-control"
                accept=".json,.docx,.pdf,.png,.jpg,.jpeg" required>
       </div>
-      <div class="col-md-3 mb-2">
+      <div class="col-md-4 mb-2">
+        <label class="form-label">ملفّ عناصر الإجابة (اختياريّ)</label>
+        <input type="file" name="answers_file" class="form-control"
+               accept=".json,.docx,.pdf,.txt,.png,.jpg,.jpeg">
+      </div>
+      <div class="col-md-2 mb-2">
         <label class="form-label">المستوى (اختياري)</label>
         <select name="level_id" class="form-select">
           <option value="">— كل المستويات —</option>
           {% for lv in levels %}<option value="{{ lv.id }}">{{ lv.name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-md-3 mb-2">
+      <div class="col-md-2 mb-2">
         <label class="form-label">الفوج (اختياري)</label>
         <input name="group_name" class="form-control" list="grouplist" placeholder="مثل TC1">
         <datalist id="grouplist">{% for g in groups %}<option value="{{ g }}">{% endfor %}</datalist>
       </div>
-      <div class="col-md-1 mb-2 d-flex align-items-end">
-        <button class="btn btn-primary w-100">استيراد</button>
+      <div class="col-12 mb-2">
+        <button class="btn btn-primary">استيراد</button>
       </div>
     </div>
   </form>

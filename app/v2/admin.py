@@ -665,7 +665,7 @@ async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> 
 def _review_page(request: Request, *, title: str, kind: str, questions: list[dict],
                  level_id: str, group_name: str, note: str = "",
                  errors: list[str] | None = None, raw_text: str = "",
-                 ai_online: bool | None = None):
+                 answers_text: str = "", ai_online: bool | None = None):
     """صفحة مراجعة الاستيراد: عنوان + نوع + أسئلة قابلة للتحرير (بلا JSON)."""
     if ai_online is None:
         ai_online = ollama_available()
@@ -673,8 +673,8 @@ def _review_page(request: Request, *, title: str, kind: str, questions: list[dic
         "admin/quiz_import_review.html",
         _ctx(request, r_title=title, r_kind=kind, questions=questions,
              level_id=level_id, group_name=group_name, note=note,
-             errors=errors or [], raw_text=raw_text, ai_online=ai_online,
-             competencies=list(COMPETENCIES.items())))
+             errors=errors or [], raw_text=raw_text, answers_text=answers_text,
+             ai_online=ai_online, competencies=list(COMPETENCIES.items())))
 
 
 _AI_TYPE_MAP = {"heading": "heading", "passage": "passage",
@@ -703,9 +703,10 @@ def _ai_json_to_questions(raw_json: str) -> tuple[str, list[dict]]:
         except (TypeError, ValueError):
             ms = 0.0 if qtype in DISPLAY_TYPES else 4.0
         comp = str(q.get("competency") or "").strip()
+        elems = [str(e).strip() for e in (q.get("elements") or []) if str(e).strip()]
         item = {"type": qtype, "prompt": prompt, "max_score": ms,
                 "options": [], "correct": [],
-                "competency": comp if comp in COMPETENCIES else None, "elements": []}
+                "competency": comp if comp in COMPETENCIES else None, "elements": elems}
         if qtype in ("mcq_single", "mcq_multi"):
             opts = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
             raw_correct = q.get("correct")
@@ -722,14 +723,23 @@ def _ai_json_to_questions(raw_json: str) -> tuple[str, list[dict]]:
     return title, out
 
 
+def _extract_upload_text(filename: str, data: bytes) -> str:
+    try:
+        return extract_text(filename, data).text
+    except Exception:  # noqa: BLE001 — txt أو أيّ ملفّ قابل للفكّ نصّاً
+        return data.decode("utf-8", "replace")
+
+
 @router.post("/quizzes/import")
 async def quizzes_import(request: Request, file: UploadFile = File(...),
+                         answers_file: UploadFile | None = File(None),
                          level_id: str = Form(""), group_name: str = Form("")):
-    """رفع تقويم (JSON/Word/PDF/صورة) → أسئلة.
+    """رفع تقويم (JSON/Word/PDF/صورة) + ملفّ عناصر إجابة اختياريّ → أسئلة.
 
-    مساران: (١) يقينيّ — JSON صالح أو قالب Word يُحلَّل حرفيّاً فيُحفَظ مباشرةً.
-    (٢) متسامح — أيّ ملفّ آخر: يُستخرَج نصّه ويُقسَّم أسئلةً مفتوحةً يقينيّاً (بلا
-    ذكاء اصطناعيّ، بلا اتصال)، وتُعرَض قابلةً للتحرير ليراجعها الأستاذ ويحفظ."""
+    (١) يقينيّ — JSON/قالب Word يُحلَّل حرفيّاً فيُحفَظ مباشرةً.
+    (٢) ذكيّ بملفّين — إن رُفِع ملفّ عناصر الإجابة: يدمج المحرّك المحلّي الفرض وعناصره
+        فيولّد أسئلة مفتوحة/مغلقة بمؤشّرات نجاح للتصحيح الآليّ، للمراجعة.
+    (٣) متسامح — وإلّا: تحليل قاعديّ يقينيّ (بلا اتصال) للمراجعة."""
     if (g := require_admin(request)):
         return g
     data = await file.read()
@@ -746,23 +756,46 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             f"/admin/quizzes?saved=تمّ استيراد «{title}» بـ{n} سؤالاً.", status_code=303)
 
-    # (٢) المسار المتسامح: استخراج النصّ ثمّ تقسيمه أسئلةً مفتوحةً (يعمل دائماً وبلا اتصال).
-    name = (file.filename or "").lower()
-    try:
-        raw = extract_text(file.filename, data).text
-    except Exception:  # noqa: BLE001 — txt أو أيّ ملفّ قابل للفكّ نصّاً
-        raw = data.decode("utf-8", "replace")
     import os
+    raw = _extract_upload_text(file.filename, data)
     hint = os.path.splitext(os.path.basename(file.filename or ""))[0]
+    # ملفّ عناصر الإجابة (اختياريّ) — نصّه يُمرَّر للمحرّك لبناء مؤشّرات التصحيح.
+    answers_text = ""
+    afn = getattr(answers_file, "filename", None)   # تجاهُل قيمة File(None) الافتراضيّة
+    if afn:
+        answers_text = _extract_upload_text(afn, await answers_file.read())
+
+    # (٢) المسار الذكيّ بملفّين: يُشغَّل تلقائيّاً حين يُرفَق ملفّ عناصر الإجابة.
+    if answers_text.strip():
+        try:
+            title, questions = _ai_json_to_questions(
+                await asyncio.to_thread(extract_quiz_json, raw, answers_text))
+            if not questions:
+                raise AIUnavailable("لم يُرجِع المحرّك أسئلة صالحة.")
+            note = ("دمج المحرّك المحلّي الفرضَ وعناصر الإجابة: أسئلة بمؤشّرات نجاح "
+                    "للتصحيح الآليّ. راجِعها، أشّر الصواب في الاختيار، واختر الكفاية، ثمّ احفظ.")
+            return _review_page(request, title=title, kind="exercise", questions=questions,
+                                level_id=level_id, group_name=group_name, note=note,
+                                raw_text=raw, answers_text=answers_text)
+        except (AIUnavailable, json.JSONDecodeError, ValueError) as exc:
+            parsed = heuristic_quiz_from_text(raw, title_hint=hint)
+            return _review_page(
+                request, title=parsed["title"], kind=parsed["kind"],
+                questions=parsed["questions"], level_id=level_id, group_name=group_name,
+                raw_text=raw, answers_text=answers_text,
+                errors=[f"تعذّر الدمج الذكيّ بملفّين: {exc}"],
+                note="عُرِض التحليل القاعديّ للفرض. شغّل Ollama بنموذج مناسب ثمّ أعِد المحاولة.")
+
+    # (٣) المسار المتسامح: تحليل قاعديّ يقينيّ (يعمل دائماً وبلا اتصال).
     parsed = heuristic_quiz_from_text(raw, title_hint=hint)
     if not parsed["questions"]:
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("استُخرج الملفّ تلقائيّاً: خانات الاختيار ☐، العناوين والنصوص، حذف أسطر "
-            "الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي الأسئلة المفتوحة "
-            "اكتب **عناصر الإجابة** (يصحّح بها الذكاء الاصطناعيّ) واختر **الكفاية** (للتقارير). "
-            "لهيكلة أذكى جرّب زرّ «استخراج ذكيّ (Ollama)».")
+    note = ("استُخرج الملفّ تلقائيّاً: خانات الاختيار، العناوين والنصوص، حذف أسطر "
+            "الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي المفتوحة اكتب "
+            "**عناصر الإجابة** واختر **الكفاية**. لهيكلة أذكى ارفع ملفّ عناصر الإجابة "
+            "أو اضغط «استخراج ذكيّ (Ollama)».")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
                         group_name=group_name, note=note, raw_text=raw)
@@ -776,24 +809,26 @@ async def quizzes_import_ai(request: Request):
         return g
     form = await request.form()
     raw = form.get("raw_text") or ""
+    answers_text = form.get("answers_text") or ""
     level_id = (form.get("level_id") or "").strip()
     group_name = form.get("group_name") or ""
     try:
         title, questions = _ai_json_to_questions(
-            await asyncio.to_thread(extract_quiz_json, raw))
+            await asyncio.to_thread(extract_quiz_json, raw, answers_text))
         if not questions:
             raise AIUnavailable("لم يُرجِع المحرّك أسئلة صالحة.")
         note = "هيكلة المحرّك المحلّي — راجِعها وصحّحها وأشّر الصواب قبل الحفظ."
         return _review_page(request, title=title, kind="exercise", questions=questions,
                             level_id=level_id, group_name=group_name, note=note,
-                            raw_text=raw)
+                            raw_text=raw, answers_text=answers_text)
     except (AIUnavailable, json.JSONDecodeError, ValueError) as exc:
         # نرجع للتحليل القاعديّ مع رسالة واضحة (لا نفقد عمل الأستاذ).
         parsed = heuristic_quiz_from_text(raw, title_hint="")
         return _review_page(
             request, title=parsed["title"], kind="exercise",
             questions=parsed["questions"], level_id=level_id, group_name=group_name,
-            raw_text=raw, errors=[f"تعذّر الاستخراج الذكيّ: {exc}"],
+            raw_text=raw, answers_text=answers_text,
+            errors=[f"تعذّر الاستخراج الذكيّ: {exc}"],
             note="عُرِض التحليل القاعديّ. شغّل Ollama بنموذج مناسب ثمّ أعِد المحاولة.")
 
 

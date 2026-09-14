@@ -252,7 +252,7 @@ def test_ai_route_renders_structured_review(monkeypatch):
     async def run():
         eng, S, admin_mod, lid = await prep()
         monkeypatch.setattr(admin_mod, "extract_quiz_json",
-                            lambda raw: '{"title":"ف","questions":[{"type":"long_text","prompt":"حلّل","max_score":6}]}')
+                            lambda raw, ans="": '{"title":"ف","questions":[{"type":"long_text","prompt":"حلّل","max_score":6}]}')
         monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
                             lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
         form = FormData([("raw_text", "نصّ الفرض"), ("level_id", str(lid)), ("group_name", "")])
@@ -272,7 +272,7 @@ def test_ai_route_falls_back_when_engine_off(monkeypatch):
         eng, S, admin_mod, lid = await prep()
         from app.ai_feedback import AIUnavailable
 
-        def _boom(raw):
+        def _boom(raw, ans=""):
             raise AIUnavailable("مغلق")
         monkeypatch.setattr(admin_mod, "extract_quiz_json", _boom)
         monkeypatch.setattr(admin_mod, "ollama_available", lambda: False)
@@ -287,6 +287,74 @@ def test_ai_route_falls_back_when_engine_off(monkeypatch):
     assert captured["name"] == "admin/quiz_import_review.html"
     assert captured["errors"]                     # رسالة تعذّر واضحة
     assert captured["questions"]                  # التحليل القاعديّ بقي
+
+
+def test_two_file_import_merges_answers_and_maps_elements(monkeypatch):
+    """ملفّان (فرض + عناصر إجابة) → المحرّك يدمجهما فيولّد أسئلة بمؤشّرات نجاح."""
+    prep = _setup(monkeypatch)
+    captured = {}
+    seen = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+
+        # نصّان مختلفان حسب اسم الملفّ (فرض / عناصر الإجابة).
+        def _extract(fn, data):
+            return SimpleNamespace(text=" عناصر الإجابة" if "ans" in fn else "نصّ الفرض")
+        monkeypatch.setattr(admin_mod, "extract_text", _extract)
+
+        # نلتقط أنّ نصّ عناصر الإجابة وصل للمحرّك، ونُرجِع أسئلة بها elements.
+        def _fake_extract(raw, ans=""):
+            seen["raw"], seen["ans"] = raw, ans
+            return ('{"title":"فرض","questions":[{"type":"long_text",'
+                    '"prompt":"حلّل القولة","max_score":4,'
+                    '"elements":["تحديد الأطروحة","المفاهيم","النقد"]}]}')
+        monkeypatch.setattr(admin_mod, "extract_quiz_json", _fake_extract)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        await admin_mod.quizzes_import(
+            _req(), file=_UF("فرض.docx", b"x"),
+            answers_file=_UF("ans.docx", b"y"),
+            level_id=str(lid), group_name="")
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert seen["ans"].strip() == "عناصر الإجابة"          # الملفّ الثاني وصل للمحرّك
+    assert captured["name"] == "admin/quiz_import_review.html"
+    assert captured["answers_text"].strip() == "عناصر الإجابة"   # مُمرَّر للحقل المخفيّ
+    q = captured["questions"][0]
+    assert q["type"] == "long_text"
+    assert q["elements"] == ["تحديد الأطروحة", "المفاهيم", "النقد"]  # مؤشّرات النجاح
+
+
+def test_two_file_import_falls_back_to_heuristic_on_engine_error(monkeypatch):
+    """ملفّان مع محرّك مغلق → لا يضيع العمل: يُعرَض التحليل القاعديّ مع سبب واضح."""
+    prep = _setup(monkeypatch)
+    captured = {}
+
+    async def run():
+        eng, S, admin_mod, lid = await prep()
+        from app.ai_feedback import AIUnavailable
+        monkeypatch.setattr(admin_mod, "extract_text",
+                            lambda fn, data: SimpleNamespace(text=EXAM if "ans" not in fn else "عناصر"))
+
+        def _boom(raw, ans=""):
+            raise AIUnavailable("مغلق")
+        monkeypatch.setattr(admin_mod, "extract_quiz_json", _boom)
+        monkeypatch.setattr(admin_mod, "ollama_available", lambda: False)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        await admin_mod.quizzes_import(
+            _req(), file=_UF("فرض.docx", b"x"),
+            answers_file=_UF("ans.docx", b"y"),
+            level_id=str(lid), group_name="")
+        await eng.dispose()
+
+    asyncio.run(run())
+    assert captured["name"] == "admin/quiz_import_review.html"
+    assert captured["errors"]                              # سبب التعذّر معروض
+    assert captured["questions"]                           # التحليل القاعديّ بقي
+    assert captured["answers_text"].strip() == "عناصر"     # نصّ الإجابة محفوظ للإعادة
 
 
 def test_student_quiz_numbers_only_answerable(monkeypatch):

@@ -233,22 +233,28 @@ SYSTEM_EXTRACT = (
     "- انسخ نصّ الأطروحة/النصّ الفلسفيّ كاملاً في عنصر passage.\n"
     "- لكلّ سؤال: انسخ نصّه كما هو، واستخرج نقطته إن وُجدت «(3 نقاط)» في max_score.\n"
     "- options وcorrect لأسئلة الاختيار فقط؛ correct قائمة مؤشّرات الإجابات الصحيحة (فارغة إن لم تُعرَف).\n"
+    "- «elements» قائمة نصوص = عناصر الإجابة النموذجيّة للأسئلة المفتوحة (مؤشّرات نجاح "
+    "يصحّح بها الذكاء الاصطناعيّ لاحقاً)؛ استخرجها من «عناصر الإجابة» المرفقة إن وُجدت وطابِقها بالسؤال المناسب.\n"
     "- لا تخترع محتوى غير وارد. هذا اقتراحٌ يراجعه الأستاذ ويصحّحه قبل الحفظ."
 )
 
 
-def extract_quiz_json(raw_text: str) -> str:
+def extract_quiz_json(raw_text: str, answers_text: str = "") -> str:
     """يستخرج فرضاً مهيكلاً (JSON نصّاً) من نصّه الخام عبر المحرّك المحلّي.
 
-    fmt=json يضمن JSON صالحاً نحويّاً؛ قد لا يطابق المخطّط تماماً فيُراجَع في شاشة
-    التحرير. يرفع AIUnavailable إن أُغلق المحرّك (تدهور لطيف: يبقى تحليل النظام القاعديّ)."""
+    answers_text: نصّ «عناصر الإجابة» (ملفّ ثانٍ اختياريّ)؛ يُدمَج فيُسنِد المحرّك
+    عناصر النجاح لكلّ سؤال مفتوح (elements) لأجل التصحيح الآليّ.
+    fmt=json يضمن JSON صالحاً نحويّاً؛ يُراجَع في شاشة التحرير. يرفع AIUnavailable
+    إن أُغلق المحرّك (تدهور لطيف: يبقى تحليل النظام القاعديّ)."""
     text = (raw_text or "").strip()[:8000]
     if not text:
         raise AIUnavailable("النصّ فارغ — لا محتوى لاستخراجه.")
-    # نافذة السياق تُقاس على حجم الفرض لا ثابتة كبيرة (٨١٩٢ كانت تُثقل ذاكرة البطاقة
-    # فيهرب جزءٌ للمعالج ويبطؤ). تقدير عربيّ ~٣ أحرف/رمز + سقف مخرَج معقول.
-    num_predict = 2048
-    approx_in = len(text) // 3
+    ans = (answers_text or "").strip()[:4000]
+    user = f"نصّ الفرض:\n{text}"
+    if ans:
+        user += f"\n\n=== عناصر الإجابة (لمؤشّرات التصحيح) ===\n{ans}"
+    num_predict = 2560 if ans else 2048
+    approx_in = len(user) // 3
     num_ctx = min(8192, max(4096, approx_in + num_predict + 512))
-    return _generate(SYSTEM_EXTRACT, text, fmt="json",
+    return _generate(SYSTEM_EXTRACT, user, fmt="json",
                      num_predict=num_predict, num_ctx=num_ctx, timeout=1800)
