@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uvicorn
 
+from app.netinfo import lan_ip
 from app.settings import settings
 
 
@@ -27,7 +28,31 @@ def _enable_fast_loop() -> None:
         pass
 
 
+def _startup_banner() -> None:
+    """يطبع عنوان دخول التلاميذ وتعليمة القاعة الحاسمة قبل إقلاع الخادم.
+
+    التعليمة الأهمّ لضمان قراءة كلّ الهواتف: «وضع الطيران ثمّ تشغيل WiFi» — فبلا
+    بيانات جوّال لا يُسقِط الهاتفُ شبكةَ الراوتر المعزولة (بلا إنترنت) ويصل للنظام.
+    """
+    ip = lan_ip()
+    port = settings.port
+    line = "═" * 60
+    print(f"\n{line}")
+    print("  PHILO-TECH — جاهز")
+    if ip:
+        print(f"  📱 عنوان دخول التلاميذ:  http://{ip}:{port}/student")
+        print(f"  🖥️  لوحة الأستاذ:         http://{ip}:{port}/admin   (رمز QR: /admin/qr)")
+    else:
+        print("  ⚠️  تعذّر كشف عنوان الشبكة — تأكّد من وصل الحاسوب بالراوتر.")
+    print("  ────────────────────────────────────────────────")
+    print("  ✈️  ليقرأ النظامَ كلُّ الهواتف على شبكةٍ بلا إنترنت:")
+    print("      على كلّ هاتف: «وضع الطيران» ثمّ شغّل WiFi وتّصل بشبكة الراوتر.")
+    print("      (بلا بيانات جوّال لا يُغادر الهاتف شبكة الراوتر.)")
+    print(f"{line}\n")
+
+
 if __name__ == "__main__":
     _enable_fast_loop()
+    _startup_banner()
     uvicorn.run("main:app", host="0.0.0.0", port=settings.port,
                 loop="auto", workers=1)
