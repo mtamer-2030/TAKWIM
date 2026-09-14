@@ -47,6 +47,7 @@ from ..models import (
     TextType,
 )
 from ..backup import backup_bytes, try_backup_quiet
+from ..codes import make_login_code
 from .. import presence
 from ..netinfo import lan_ips, lan_url
 from ..qrcodes import qr_png
@@ -443,15 +444,44 @@ async def import_save_text(request: Request, axis_id: int = Form(...),
     return RedirectResponse("/admin/texts", status_code=303)
 
 
+def _class_label(group: str | None, level: Level | None) -> str:
+    """رمز قسمٍ صالحٌ للترميز (TC1، 1BAC2…): القسم إن كان صالحاً، وإلّا من رمز المستوى
+    (TC → TC1) — فيبقى توليد رمز الدخول ممكناً حتى لو كان اسم القسم عربيّاً أو فارغاً."""
+    g = (group or "").strip().upper()
+    if level_of_class_label(g):
+        return g
+    base = ((level.code if level and level.code else "TC") or "TC").strip().upper()
+    return f"{base}1"
+
+
 @router.post("/import/save/roster")
 async def import_save_roster(request: Request, level_id: int = Form(...),
                              group_override: str = Form(""), rows_json: str = Form(...)):
-    """الحفظ النهائي للائحة: تراكمي (مطابقة برمز مسار)، بلا حذف."""
+    """الحفظ النهائي للائحة: تراكمي (مطابقة برمز مسار)، بلا حذف.
+
+    يولّد **رمز دخولٍ قصيراً** لكلّ تلميذٍ جديد (مثل TC1-10-JH) — كان ناقصاً فلم
+    تُقبَل الرموز القصيرة أصلاً؛ يظهر في اللائحة والبطاقات فيدخل التلميذ بالمسح أو
+    بكتابته. القدامى بلا رمزٍ يُمنَحون واحداً أيضاً (ترقية لطيفة، بلا ترحيل)."""
     if (g := require_admin(request)):
         return g
     rows = json.loads(rows_json)
     added = updated = 0
     async with AsyncSessionLocal() as s:
+        level = await s.get(Level, level_id)
+        # مجموعة الرموز الموجودة لضمان التفرّد (make_login_code تستشير دالّةً متزامنة).
+        existing_codes = set((await s.execute(
+            select(Student.login_code).where(Student.login_code.is_not(None)))).scalars().all())
+        # عدّاد تسلسليّ لكلّ قسمٍ يبدأ بعد الموجودين (لترقيمٍ نظيف: 01، 02…).
+        seq: dict[str, int] = dict((grp or "", n) for grp, n in (await s.execute(
+            select(Student.group_name, func.count()).group_by(Student.group_name))).all())
+
+        def _new_code(group: str | None) -> str:
+            label = _class_label(group, level)
+            seq[group or ""] = seq.get(group or "", 0) + 1
+            code = make_login_code(f"{label}-{seq[group or '']:02d}", existing_codes.__contains__)
+            existing_codes.add(code)
+            return code
+
         for row in rows:
             name = (row.get("full_name") or "").strip()
             if not name:
@@ -465,10 +495,12 @@ async def import_save_roster(request: Request, level_id: int = Form(...),
                 existing.full_name = name
                 if group:
                     existing.group_name = group
+                if not existing.login_code:          # ترقية القدامى بلا رمز
+                    existing.login_code = _new_code(existing.group_name or group)
                 updated += 1
             else:
                 s.add(Student(full_name=name, level_id=level_id, group_name=group,
-                              massar_code=massar))
+                              massar_code=massar, login_code=_new_code(group)))
                 added += 1
         await s.commit()
     return RedirectResponse(f"/admin/rosters?added={added}&updated={updated}", status_code=303)

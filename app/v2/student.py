@@ -76,7 +76,11 @@ async def join(request: Request, code: str = ""):
 
 
 async def _find_by_code(code: str) -> Student | None:
-    code = code.strip().upper()
+    # تسامحٌ في الإدخال: مسافات داخليّة/طرفيّة وحالة الأحرف — فلا يُرفَض رمزٌ صحيحٌ
+    # لمجرّد مسافةٍ زائدة أو حرفٍ صغير.
+    code = "".join((code or "").split()).upper()
+    if not code:
+        return None
     async with AsyncSessionLocal() as s:
         return await s.scalar(
             select(Student).where(
