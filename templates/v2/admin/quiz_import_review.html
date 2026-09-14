@@ -25,9 +25,11 @@
   <input type="hidden" name="answers_text" value="{{ answers_text }}">
   <input type="hidden" name="level_id" value="{{ level_id }}">
   <input type="hidden" name="group_name" value="{{ group_name }}">
-  <button class="btn btn-outline-primary" {% if not ai_online %}disabled title="شغّل Ollama"{% endif %}>
-    ✨ استخراج ذكيّ بالمحرّك المحلّي (Ollama){% if not ai_online %} — المحرّك غير مشغّل{% endif %}</button>
-  <span class="text-secondary" style="font-size:.85rem">يعيد هيكلة الفرض بذكاء (يتجاهل تعديلاتك الحاليّة).</span>
+  <button class="btn btn-outline-secondary btn-sm" {% if not ai_online %}disabled title="شغّل Ollama"{% endif %}>
+    ✨ إعادة هيكلة ذكيّة (اختياريّ){% if not ai_online %} — المحرّك غير مشغّل{% endif %}</button>
+  <span class="text-secondary" style="font-size:.85rem">
+    اختياريّ وبطيء (قد يفوق دقيقةً على العتاد الضعيف وقد يختصر النصّ) — التحليل
+    الفوريّ أعلاه كافٍ عادةً. يتجاهل تعديلاتك الحاليّة.</span>
 </form>
 {% endif %}
 

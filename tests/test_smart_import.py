@@ -289,59 +289,34 @@ def test_ai_route_falls_back_when_engine_off(monkeypatch):
     assert captured["questions"]                  # التحليل القاعديّ بقي
 
 
-def test_two_file_import_merges_answers_and_maps_elements(monkeypatch):
-    """ملفّان (فرض + عناصر إجابة) → المحرّك يدمجهما فيولّد أسئلة بمؤشّرات نجاح."""
+EXAM_WITH_PASSAGE = """المستوى: الجذع المشترك | المادة: الفلسفة | المدة: ساعة
+النص الفلسفي:
+يرى الفيلسوف أنّ الإنسان كائن اجتماعيّ بطبعه، لا يقوى على العيش منفرداً بمعزل عن
+الجماعة، إذ يجد في التعاون مع غيره سبيلاً إلى تلبية حاجاته المتشعّبة وتحقيق ذاته.
+وهذا التلازم بين الفرد والجماعة يجعل الوجود الإنسانيّ وجوداً مشتركاً في جوهره.
+1- حلّل مضمون النص.
+2- ما علاقة الفرد بالمجتمع؟"""
+
+
+def test_two_file_import_is_instant_and_attaches_elements(monkeypatch):
+    """ملفّان (فرض + عناصر إجابة) → تحليل قاعديّ فوريّ (بلا محرّك) + إسناد المؤشّرات."""
     prep = _setup(monkeypatch)
     captured = {}
-    seen = {}
 
     async def run():
         eng, S, admin_mod, lid = await prep()
 
-        # نصّان مختلفان حسب اسم الملفّ (فرض / عناصر الإجابة).
         def _extract(fn, data):
-            return SimpleNamespace(text=" عناصر الإجابة" if "ans" in fn else "نصّ الفرض")
+            if "ans" in fn:
+                return SimpleNamespace(text="1- تحديد الأطروحة، شرح المفاهيم، النقد\n"
+                                            "2- إبراز التلازم بين الفرد والجماعة")
+            return SimpleNamespace(text=EXAM_WITH_PASSAGE)
         monkeypatch.setattr(admin_mod, "extract_text", _extract)
 
-        # نلتقط أنّ نصّ عناصر الإجابة وصل للمحرّك، ونُرجِع أسئلة بها elements.
-        def _fake_extract(raw, ans=""):
-            seen["raw"], seen["ans"] = raw, ans
-            return ('{"title":"فرض","questions":[{"type":"long_text",'
-                    '"prompt":"حلّل القولة","max_score":4,'
-                    '"elements":["تحديد الأطروحة","المفاهيم","النقد"]}]}')
-        monkeypatch.setattr(admin_mod, "extract_quiz_json", _fake_extract)
-        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
-                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
-        await admin_mod.quizzes_import(
-            _req(), file=_UF("فرض.docx", b"x"),
-            answers_file=_UF("ans.docx", b"y"),
-            level_id=str(lid), group_name="")
-        await eng.dispose()
-
-    asyncio.run(run())
-    assert seen["ans"].strip() == "عناصر الإجابة"          # الملفّ الثاني وصل للمحرّك
-    assert captured["name"] == "admin/quiz_import_review.html"
-    assert captured["answers_text"].strip() == "عناصر الإجابة"   # مُمرَّر للحقل المخفيّ
-    q = captured["questions"][0]
-    assert q["type"] == "long_text"
-    assert q["elements"] == ["تحديد الأطروحة", "المفاهيم", "النقد"]  # مؤشّرات النجاح
-
-
-def test_two_file_import_falls_back_to_heuristic_on_engine_error(monkeypatch):
-    """ملفّان مع محرّك مغلق → لا يضيع العمل: يُعرَض التحليل القاعديّ مع سبب واضح."""
-    prep = _setup(monkeypatch)
-    captured = {}
-
-    async def run():
-        eng, S, admin_mod, lid = await prep()
-        from app.ai_feedback import AIUnavailable
-        monkeypatch.setattr(admin_mod, "extract_text",
-                            lambda fn, data: SimpleNamespace(text=EXAM if "ans" not in fn else "عناصر"))
-
-        def _boom(raw, ans=""):
-            raise AIUnavailable("مغلق")
-        monkeypatch.setattr(admin_mod, "extract_quiz_json", _boom)
-        monkeypatch.setattr(admin_mod, "ollama_available", lambda: False)
+        # المحرّك يجب ألّا يُستدعى إطلاقاً في مسار الاستيراد.
+        def _must_not_call(*a, **k):
+            raise AssertionError("لا ينبغي استدعاء المحرّك في الاستيراد")
+        monkeypatch.setattr(admin_mod, "extract_quiz_json", _must_not_call)
         monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
                             lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
         await admin_mod.quizzes_import(
@@ -352,9 +327,42 @@ def test_two_file_import_falls_back_to_heuristic_on_engine_error(monkeypatch):
 
     asyncio.run(run())
     assert captured["name"] == "admin/quiz_import_review.html"
-    assert captured["errors"]                              # سبب التعذّر معروض
-    assert captured["questions"]                           # التحليل القاعديّ بقي
-    assert captured["answers_text"].strip() == "عناصر"     # نصّ الإجابة محفوظ للإعادة
+    types = [q["type"] for q in captured["questions"]]
+    assert "passage" in types                              # النصّ الفلسفيّ محفوظ
+    passage = next(q for q in captured["questions"] if q["type"] == "passage")
+    assert "كائن اجتماعيّ" in passage["prompt"] and "وجوداً مشتركاً" in passage["prompt"]
+    # عناصر الإجابة أُسنِدت للسؤال المفتوح الأوّل بالترقيم.
+    open_qs = [q for q in captured["questions"] if q["type"] in ("long_text", "short_text")]
+    assert open_qs and open_qs[0].get("elements")
+    assert "تحديد الأطروحة" in open_qs[0]["elements"]
+    assert captured["answers_text"]                        # محفوظ في الحقل المخفيّ
+
+
+def test_heuristic_groups_multiline_passage():
+    """البند «نسي النص»: أسطر النصّ الفلسفيّ القصيرة تُجمَع في passage واحد لا تضيع."""
+    parsed = heuristic_quiz_from_text(EXAM_WITH_PASSAGE, title_hint="فرض")
+    passages = [q for q in parsed["questions"] if q["type"] == "passage"]
+    assert len(passages) == 1
+    assert "الإنسان كائن اجتماعيّ" in passages[0]["prompt"]
+    assert "التلازم بين الفرد والجماعة" in passages[0]["prompt"]
+    # السؤالان المفتوحان بقيا سؤالين (لم يُبتلعا في النصّ).
+    opens = [q for q in parsed["questions"] if q["type"] == "long_text"]
+    assert len(opens) == 2
+
+
+def test_attach_answer_elements_by_number():
+    """إسناد يقينيّ: الكتلة رقم k → السؤال المفتوح ذو الترتيب k بين القابلة للإجابة."""
+    from app.services.quizzes import attach_answer_elements
+    qs = [{"type": "heading", "prompt": "قسم"},
+          {"type": "long_text", "prompt": "س١"},
+          {"type": "mcq_single", "prompt": "س٢"},
+          {"type": "long_text", "prompt": "س٣"}]
+    ans = "1- تحديد الأطروحة، شرح المفاهيم\n2- علاقة\n3- المقدمة، العرض، الخاتمة"
+    matched = attach_answer_elements(qs, ans)
+    assert matched == 2                                    # سؤالان مفتوحان فقط
+    assert qs[1]["elements"] == ["تحديد الأطروحة", "شرح المفاهيم"]
+    assert qs[3]["elements"] == ["المقدمة", "العرض", "الخاتمة"]
+    assert "elements" not in qs[2]                         # الاختيار لا يأخذ عناصر هنا
 
 
 def test_student_quiz_numbers_only_answerable(monkeypatch):

@@ -52,6 +52,7 @@ from ..constants import (COMPETENCIES, DISPLAY_TYPES, KINDS,
                          QUESTION_TYPES_CLOSED, level_of_class_label)
 from ..services.quizzes import (
     QuizImportError,
+    attach_answer_elements,
     build_quiz,
     grade_answer,
     heuristic_quiz_from_text,
@@ -765,37 +766,32 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
     if afn:
         answers_text = _extract_upload_text(afn, await answers_file.read())
 
-    # (٢) المسار الذكيّ بملفّين: يُشغَّل تلقائيّاً حين يُرفَق ملفّ عناصر الإجابة.
-    if answers_text.strip():
-        try:
-            title, questions = _ai_json_to_questions(
-                await asyncio.to_thread(extract_quiz_json, raw, answers_text))
-            if not questions:
-                raise AIUnavailable("لم يُرجِع المحرّك أسئلة صالحة.")
-            note = ("دمج المحرّك المحلّي الفرضَ وعناصر الإجابة: أسئلة بمؤشّرات نجاح "
-                    "للتصحيح الآليّ. راجِعها، أشّر الصواب في الاختيار، واختر الكفاية، ثمّ احفظ.")
-            return _review_page(request, title=title, kind="exercise", questions=questions,
-                                level_id=level_id, group_name=group_name, note=note,
-                                raw_text=raw, answers_text=answers_text)
-        except (AIUnavailable, json.JSONDecodeError, ValueError) as exc:
-            parsed = heuristic_quiz_from_text(raw, title_hint=hint)
-            return _review_page(
-                request, title=parsed["title"], kind=parsed["kind"],
-                questions=parsed["questions"], level_id=level_id, group_name=group_name,
-                raw_text=raw, answers_text=answers_text,
-                errors=[f"تعذّر الدمج الذكيّ بملفّين: {exc}"],
-                note="عُرِض التحليل القاعديّ للفرض. شغّل Ollama بنموذج مناسب ثمّ أعِد المحاولة.")
-
-    # (٣) المسار المتسامح: تحليل قاعديّ يقينيّ (يعمل دائماً وبلا اتصال).
+    # المسار اليقينيّ (فوريّ، بلا ذكاء اصطناعيّ): تحليل قاعديّ للفرض يحفظ النصّ
+    # الفلسفيّ والعناوين ويكشف الاختيار. إن رُفِع ملفّ عناصر الإجابة أُسنِدت عناصره
+    # للأسئلة المفتوحة بالترقيم — كلّه محلّيّ وفوريّ، لا انتظار للمحرّك.
     parsed = heuristic_quiz_from_text(raw, title_hint=hint)
     if not parsed["questions"]:
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("استُخرج الملفّ تلقائيّاً: خانات الاختيار، العناوين والنصوص، حذف أسطر "
-            "الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي المفتوحة اكتب "
-            "**عناصر الإجابة** واختر **الكفاية**. لهيكلة أذكى ارفع ملفّ عناصر الإجابة "
-            "أو اضغط «استخراج ذكيّ (Ollama)».")
+    if answers_text.strip():
+        matched = attach_answer_elements(parsed["questions"], answers_text)
+        if matched:
+            note = (f"استُخرج الفرض ونصوصه، وأُسنِدت عناصر الإجابة لـ{matched} سؤالاً مفتوحاً "
+                    "مؤشّراتٍ للتصحيح الآليّ. راجِعها، أشّر الصواب في الاختيار، واختر "
+                    "الكفاية، ثمّ احفظ.")
+        else:
+            note = ("استُخرج الفرض ونصوصه. تعذّر مطابقة ترقيم عناصر الإجابة بالأسئلة "
+                    "آليّاً — انسخ العناصر في خانة «عناصر الإجابة» لكلّ سؤال مفتوح ثمّ احفظ.")
+        return _review_page(request, title=parsed["title"], kind=parsed["kind"],
+                            questions=parsed["questions"], level_id=level_id,
+                            group_name=group_name, note=note,
+                            raw_text=raw, answers_text=answers_text)
+
+    note = ("استُخرج الملفّ فوريّاً: خانات الاختيار، العناوين والنصوص الفلسفيّة، حذف "
+            "أسطر الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي المفتوحة "
+            "اكتب **عناصر الإجابة** واختر **الكفاية**. (زرّ «استخراج ذكيّ» اختياريّ "
+            "وبطيء — للعتاد القويّ فقط؛ التصحيح الآليّ يبقى مهمّة المحرّك المحلّي.)")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
                         group_name=group_name, note=note, raw_text=raw)

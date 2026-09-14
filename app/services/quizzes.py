@@ -180,13 +180,14 @@ def _is_section_title(line: str) -> bool:
     return False
 
 
-def _is_passage(line: str) -> bool:
-    """فقرة نصّ للقراءة: طويلة، بلا خانات ولا ترقيم سؤال ولا استفهام، ليست عنواناً."""
-    if _BOX_ANY.search(line) or line.endswith("؟") or _NUM_START.match(line):
+def _is_prose_line(line: str) -> bool:
+    """سطر نثرٍ للقراءة (لا سؤال): بلا خانات، لا ترقيم سؤال، لا استفهام، لا فعل
+    سؤال، وليس ترويسةً ولا عنوان قسم. تُجمَع أسطر النثر المتتالية في نصٍّ واحد."""
+    if not line or _BOX_ANY.search(line) or line.endswith("؟") or _NUM_START.match(line):
         return False
     if _is_header(line) or _is_section_title(line):
         return False
-    return len(line) >= 120
+    return not _Q_VERB.match(_LEAD.sub("", line).strip())
 
 
 def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
@@ -221,10 +222,20 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
                 questions.append(_as(clean, "heading"))
                 i += 1
                 continue
-            if _is_passage(ln):
-                questions.append(_as(ln, "passage"))
-                i += 1
-                continue
+            if _is_prose_line(ln):
+                # نجمع أسطر النثر المتتالية في نصٍّ واحد للقراءة (لا يضيع النصّ الفلسفيّ
+                # لأنّ أسطره فُرادى قصيرة). نعتمده نصّاً فقط إن بلغ المجموع طولاً معتبراً.
+                run = [ln]
+                j = i + 1
+                while j < n and _is_prose_line(lines[j]):
+                    run.append(lines[j])
+                    j += 1
+                block = " ".join(run).strip()
+                if len(block) >= 120:
+                    questions.append(_as(block, "passage"))
+                    i = j
+                    continue
+                # نثر قصير: لا يكفي نصّاً — يُعالَج السطر الحاليّ سؤالاً مفتوحاً أدناه.
         if len(boxes) >= 2:
             # خيارات مضمَّنة في السطر نفسه: ما قبل أوّل علامة سؤالٌ، والباقي خيارات.
             q = _mcq_from_text(ln[:boxes[0].start()], ln[boxes[0].start():])
@@ -254,6 +265,66 @@ def heuristic_quiz_from_text(text: str, title_hint: str = "") -> dict:
         questions.append(_open_q(" ".join(lines).strip()))
     return {"title": title, "kind": "exercise", "level": None, "unit": None,
             "concept": None, "stimuli": [], "questions": questions}
+
+
+_ANSWERABLE_SKIP = ("heading", "passage", "skip")
+
+
+def _split_answer_blocks(answers_text: str) -> dict[int, list[str]]:
+    """يقسّم نصّ «عناصر الإجابة» إلى كتلٍ مرقّمة {رقم السؤال: [أسطر العناصر]}.
+    يتسامح مع الترقيم العربيّ والغربيّ وبادئة «السؤال ٣». بلا ذكاء اصطناعيّ."""
+    blocks: dict[int, list[str]] = {}
+    cur: int | None = None
+    for raw in (answers_text or "").splitlines():
+        ln = _re.sub(r"[.․‥…_ـ]{4,}.*$", "", raw).strip(" *•-–—\t")
+        if not ln:
+            continue
+        m = _NUM_START.match(ln)
+        if m:
+            digits = _re.match(r"\D*(\d+)", ln.translate(_AR_DIGITS))
+            if digits:
+                cur = int(digits.group(1))
+                rest = ln[m.end():].strip(" .:،؛-–—")
+                blocks[cur] = [rest] if rest else []
+                continue
+        if cur is not None:
+            blocks[cur].append(ln)
+    return blocks
+
+
+def _elements_from_block(block: list[str]) -> list[str]:
+    """يحوّل كتلة عناصر إجابةٍ إلى قائمة مؤشّرات: سطرٌ لكلّ عنصر، وإن كان سطراً
+    واحداً فُصِل على «،/؛/-» فقط إن أعطى عناصر متعدّدة معقولة."""
+    out: list[str] = []
+    for ln in block:
+        parts = [p.strip(" .،؛-–—") for p in _re.split(r"[،؛]|\s[-–—]\s", ln)]
+        parts = [p for p in parts if len(p) >= 3]
+        out.extend(parts if len(parts) >= 2 else ([ln] if len(ln) >= 3 else []))
+    return out
+
+
+def attach_answer_elements(questions: list[dict], answers_text: str) -> int:
+    """يُسنِد عناصر الإجابة (من الملفّ الثاني) إلى الأسئلة المفتوحة يقينيّاً بالترقيم.
+
+    يطابق الكتلة رقم k بالسؤال المفتوح ذي الترتيب k بين الأسئلة القابلة للإجابة
+    (تُتخطّى العناوين/النصوص). يعيد عدد الأسئلة التي أُسنِدت لها عناصر. لا يخترع
+    شيئاً؛ إن لم يتطابق الترقيم أعاد صفراً ويبقى النصّ للأستاذ يوزّعه يدويّاً."""
+    blocks = _split_answer_blocks(answers_text)
+    if not blocks:
+        return 0
+    matched = 0
+    idx = 0
+    for q in questions:
+        if q.get("type") in _ANSWERABLE_SKIP:
+            continue
+        idx += 1
+        blk = blocks.get(idx)
+        if blk and q.get("type") in ("long_text", "short_text"):
+            elems = _elements_from_block(blk)
+            if elems:
+                q["elements"] = elems
+                matched += 1
+    return matched
 
 
 def resolve_skill_id(value: str | None, skill_ids: dict[str, int]) -> int | None:
