@@ -11,7 +11,8 @@
     {% if error %}<div class="pt-card" style="border-color:#e53935;color:#b71c1c">{{ error }}</div>{% endif %}
     <form method="post" action="/student/login">
       <input name="code" class="pt-input" autocomplete="off" autocapitalize="characters"
-             inputmode="text" placeholder="مثال: D161055238" required>
+             inputmode="text" placeholder="مثال: D161055238" required autofocus
+             onclick="this.focus()">
       <div style="height:1rem"></div>
       <button class="pt-btn" type="submit">دخول</button>
     </form>
