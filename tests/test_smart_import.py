@@ -289,6 +289,57 @@ def test_ai_route_falls_back_when_engine_off(monkeypatch):
     assert captured["questions"]                  # التحليل القاعديّ بقي
 
 
+def test_student_quiz_numbers_only_answerable(monkeypatch):
+    """البند ٢: التلميذ يرى ترقيماً متسلسلاً للأسئلة فقط (العناوين/النصوص لا تُرقَّم)."""
+    from types import SimpleNamespace as N
+    from app.v2.web import templates
+    qs = [N(id=1, qtype="heading", prompt="القسم الأوّل", max_score=0, stimulus=None, payload={}),
+          N(id=2, qtype="long_text", prompt="سؤال أ", max_score=4, stimulus=None, payload={}),
+          N(id=3, qtype="passage", prompt="نصّ", max_score=0, stimulus=None, payload={}),
+          N(id=4, qtype="long_text", prompt="سؤال ب", max_score=4, stimulus=None, payload={})]
+    quiz = N(id=7, title="ت", questions=qs)
+    html = templates.get_template("student/quiz.html").render(quiz=quiz, saved={})
+    assert "1. سؤال أ" in html and "2. سؤال ب" in html   # ترقيم ١ ثمّ ٢ (لا ٢ و٤)
+    assert "3. سؤال" not in html
+
+
+def test_save_open_with_competency_and_elements(monkeypatch):
+    """البند ٣: الكفاية → مهارة (للتقارير)، وعناصر الإجابة → مؤشّرات (لتصحيح AI)."""
+    from app.v2 import admin as admin_mod
+
+    async def run():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        S = async_sessionmaker(eng, expire_on_commit=False)
+        monkeypatch.setattr(admin_mod, "AsyncSessionLocal", S)
+
+        async def _skills():
+            return {"البنية الحجاجية": 99}       # خريطة مهارة مبذورة
+        monkeypatch.setattr(admin_mod, "skill_id_map", _skills)
+        async with S() as s:
+            lv = Level(name="ج", code="TC"); s.add(lv); await s.flush()
+            await s.commit()
+            lid = lv.id
+        form = FormData([
+            ("level_id", str(lid)), ("count", "1"), ("r_title", "ف"), ("r_kind", "exam"),
+            ("q_prompt_0", "استخرج الأطروحة"), ("q_type_0", "long_text"), ("q_score_0", "4"),
+            ("q_comp_0", "argumentation"),
+            ("q_elem_0", "تحديد الأطروحة\nذكر الحجّة\nالاستنتاج"),
+        ])
+        await admin_mod.quizzes_import_save(_FormReq(form))
+        async with S() as s:
+            qq = (await s.execute(select(QuizQuestion))).scalars().first()
+            data = (qq.skill_id, qq.indicators)
+        await eng.dispose()
+        return data
+
+    skill_id, indicators = asyncio.run(run())
+    assert skill_id == 99                          # الكفاية «الحجاج» → مهارة «البنية الحجاجية»
+    assert len(indicators) == 3                    # ثلاثة عناصر إجابة → ثلاثة مؤشّرات
+    assert indicators[0]["text"] == "تحديد الأطروحة"
+
+
 def test_save_open_question(monkeypatch):
     prep = _setup(monkeypatch)
 

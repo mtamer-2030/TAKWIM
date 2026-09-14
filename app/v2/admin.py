@@ -48,7 +48,8 @@ from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
-from ..constants import DISPLAY_TYPES, KINDS, QUESTION_TYPES_CLOSED, level_of_class_label
+from ..constants import (COMPETENCIES, DISPLAY_TYPES, KINDS,
+                         QUESTION_TYPES_CLOSED, level_of_class_label)
 from ..services.quizzes import (
     QuizImportError,
     build_quiz,
@@ -672,7 +673,8 @@ def _review_page(request: Request, *, title: str, kind: str, questions: list[dic
         "admin/quiz_import_review.html",
         _ctx(request, r_title=title, r_kind=kind, questions=questions,
              level_id=level_id, group_name=group_name, note=note,
-             errors=errors or [], raw_text=raw_text, ai_online=ai_online))
+             errors=errors or [], raw_text=raw_text, ai_online=ai_online,
+             competencies=list(COMPETENCIES.items())))
 
 
 _AI_TYPE_MAP = {"heading": "heading", "passage": "passage",
@@ -700,8 +702,10 @@ def _ai_json_to_questions(raw_json: str) -> tuple[str, list[dict]]:
             ms = max(0.0, float(q.get("max_score") or (0 if qtype in DISPLAY_TYPES else 4)))
         except (TypeError, ValueError):
             ms = 0.0 if qtype in DISPLAY_TYPES else 4.0
+        comp = str(q.get("competency") or "").strip()
         item = {"type": qtype, "prompt": prompt, "max_score": ms,
-                "options": [], "correct": []}
+                "options": [], "correct": [],
+                "competency": comp if comp in COMPETENCIES else None, "elements": []}
         if qtype in ("mcq_single", "mcq_multi"):
             opts = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
             raw_correct = q.get("correct")
@@ -755,9 +759,10 @@ async def quizzes_import(request: Request, file: UploadFile = File(...),
         return RedirectResponse(
             "/admin/quizzes?error=تعذّر إيجاد نصّ أسئلة في الملفّ. جرّب ملفّاً آخر أو القالب.",
             status_code=303)
-    note = ("استُخرج الملفّ تلقائيّاً: تُكتشَف خانات الاختيار ☐، وتُميَّز العناوين والنصوص، "
-            "وتُحذف أسطر الإجابة، وتُستخرَج النقط. راجِع كلّ عنصر؛ في أسئلة الاختيار "
-            "**أشّر الإجابة الصحيحة**. لهيكلة أذكى جرّب زرّ «استخراج ذكيّ (Ollama)».")
+    note = ("استُخرج الملفّ تلقائيّاً: خانات الاختيار ☐، العناوين والنصوص، حذف أسطر "
+            "الإجابة، واستخراج النقط. في الاختيار **أشّر الصواب**؛ وفي الأسئلة المفتوحة "
+            "اكتب **عناصر الإجابة** (يصحّح بها الذكاء الاصطناعيّ) واختر **الكفاية** (للتقارير). "
+            "لهيكلة أذكى جرّب زرّ «استخراج ذكيّ (Ollama)».")
     return _review_page(request, title=parsed["title"], kind=parsed["kind"],
                         questions=parsed["questions"], level_id=level_id,
                         group_name=group_name, note=note, raw_text=raw)
@@ -820,7 +825,8 @@ def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
             continue
         if qtype in DISPLAY_TYPES:              # عنوان/نصّ للقراءة — يُعرَض بلا تصحيح
             questions.append({"type": qtype, "prompt": prompt, "max_score": 0.0,
-                              "options": [], "correct": []})
+                              "options": [], "correct": [], "competency": None,
+                              "elements": []})
             continue
         if qtype not in _REVIEW_OPEN and qtype not in _REVIEW_MCQ:
             qtype = "long_text"
@@ -828,8 +834,13 @@ def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
             ms = max(0.0, float(form.get(f"q_score_{i}") or 4))
         except ValueError:
             ms = 4.0
+        comp = form.get(f"q_comp_{i}") or ""
+        elems = [ln.strip() for ln in (form.get(f"q_elem_{i}") or "").splitlines()
+                 if ln.strip()]
         q = {"type": qtype, "prompt": prompt, "max_score": ms,
-             "options": [], "correct": []}
+             "options": [], "correct": [],
+             "competency": comp if comp in COMPETENCIES else None,
+             "elements": elems}
         if qtype in _REVIEW_MCQ:
             try:
                 oc = int(form.get(f"q_optcount_{i}") or 0)
@@ -855,16 +866,21 @@ def _parse_review_form(form) -> tuple[str, str, list[dict], list[str]]:
 
 
 def _to_normalized_question(q: dict) -> dict:
-    """يحوّل سؤال المراجعة إلى صيغة build_quiz (مع payload المناسب للاختيار)."""
+    """يحوّل سؤال المراجعة إلى صيغة build_quiz (payload الاختيار + عناصر إجابة المفتوحة)."""
     qtype = q["type"]
     payload: dict = {}
     if qtype == "mcq_single":
         payload = {"options": q["options"], "correct": q["correct"][0]}
     elif qtype == "mcq_multi":
         payload = {"options": q["options"], "correct": q["correct"]}
-    return {"type": qtype, "competency": None, "prompt": q["prompt"], "stimulus": None,
-            "max_score": float(q["max_score"]), "payload": payload,
-            "indicators": [], "penalties": [],
+    # عناصر الإجابة (للأسئلة المفتوحة) → مؤشّرات يصحّح بها الذكاء الاصطناعيّ لاحقاً.
+    ms = float(q["max_score"])
+    elems = q.get("elements") or []
+    per = round(ms / len(elems), 2) if elems else 0
+    indicators = [{"text": t, "points": per} for t in elems]
+    return {"type": qtype, "competency": q.get("competency"), "prompt": q["prompt"],
+            "stimulus": None, "max_score": ms, "payload": payload,
+            "indicators": indicators, "penalties": [],
             "auto_scored": qtype in QUESTION_TYPES_CLOSED}
 
 

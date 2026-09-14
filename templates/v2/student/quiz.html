@@ -37,6 +37,7 @@
       <span class="bar"><i id="qzBar"></i></span>
     </div>
     <form id="quizForm" method="post" action="/student/quiz/{{ quiz.id }}/submit">
+    {% set ns = namespace(qn=0) %}
     {% for q in quiz.questions %}
       {% if q.qtype == 'heading' %}
         <h4 style="margin:1.4rem 0 .6rem;color:#0d47a1;font-weight:800;border-bottom:2px solid #cddcf3;padding-bottom:.3rem">{{ q.prompt }}</h4>
@@ -44,9 +45,10 @@
         <div style="background:#f6f8fc;border-inline-start:4px solid #0d47a1;border-radius:.5rem;padding:.8rem 1rem;margin-bottom:1rem;line-height:1.9;white-space:pre-wrap">{{ q.prompt }}</div>
       {% else %}
       {% set a = saved.get(q.id) or {} %}
+      {% set ns.qn = ns.qn + 1 %}
       <div class="pt-card qz-q" data-qid="{{ q.id }}" style="margin-bottom:1rem">
         <div class="qz-flag">⚠ لم تُجب بعد</div>
-        <div style="font-weight:700;margin-bottom:.5rem">{{ loop.index }}. {{ q.prompt }}
+        <div style="font-weight:700;margin-bottom:.5rem">{{ ns.qn }}. {{ q.prompt }}
           <span class="muted" style="font-weight:400;font-size:.8rem">({{ q.max_score }} ن)</span>
         </div>
         {% if q.stimulus %}
