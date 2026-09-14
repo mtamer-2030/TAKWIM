@@ -57,6 +57,24 @@ def login_page(request: Request):
     return templates.TemplateResponse("student/login.html", _ctx(request, code=code))
 
 
+@router.get("/join", response_class=HTMLResponse)
+async def join(request: Request, code: str = ""):
+    """دخولٌ بمسح بطاقة التلميذ الخاصّة — بلا كتابةٍ إطلاقاً (الحلّ الجذريّ لـ«لا أقدر
+    على الكتابة»). بطاقة كلّ تلميذ رمزُ QR يحمل ?code=رمزه؛ يمسحها فيرى اسمَه ويؤكّد
+    بنقرةٍ واحدة (شاشة confirm نفسها)، دون لوحة مفاتيح. إن غاب الرمز أو جهُل، نعود
+    لصفحة الدخول العاديّة مع رسالةٍ واضحة."""
+    code = (code or "").strip().upper()
+    student = await _find_by_code(code) if code else None
+    if student is None:
+        return templates.TemplateResponse(
+            "student/login.html",
+            _ctx(request, code=code,
+                 error="بطاقةٌ غير معروفة. اطلب من الأستاذ بطاقتك أو اكتب رمزك يدويّاً."),
+            status_code=404)
+    return templates.TemplateResponse(
+        "student/confirm.html", _ctx(request, student=student, code=code))
+
+
 async def _find_by_code(code: str) -> Student | None:
     code = code.strip().upper()
     async with AsyncSessionLocal() as s:

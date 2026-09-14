@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -46,6 +47,7 @@ from ..models import (
     TextType,
 )
 from ..backup import backup_bytes, try_backup_quiet
+from .. import presence
 from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
@@ -217,6 +219,57 @@ async def qr_png_route(request: Request):
     if (g := require_admin(request)):
         return g
     return Response(content=qr_png(_student_url()), media_type="image/png")
+
+
+@router.get("/connected")
+async def connected_count(request: Request):
+    """عدد الهواتف التي زارت مسار التلميذ خلال آخر دقيقةٍ ونصف — يعرضه عدّاد القاعة
+    الحيّ. يجعل نجاح الاتصال «مرئيّاً» فوراً: إن ارتفع الرقم فالشبكة سليمة، وإن بقي
+    صفراً رغم محاولة التلاميذ فالعلّة شبكيّة لا في الواجهة."""
+    if (g := require_admin(request)):
+        return g
+    return {"count": presence.count()}
+
+
+def _join_url(st: Student) -> str:
+    """رابط الدخول بلا كتابة لتلميذٍ بعينه: {عنوان الخادم}/student/join?code=رمزه.
+    نفضّل login_code (بلاحقةٍ عشوائيّة أأمن)، وإلّا massar_code."""
+    code = (st.login_code or st.massar_code or "").strip().upper()
+    return f"{_student_url()}/student/join?code={quote(code, safe='')}"
+
+
+@router.get("/cards", response_class=HTMLResponse)
+async def student_cards(request: Request, group: str | None = None):
+    """صفحة بطاقاتٍ قابلة للطباعة: بطاقةٌ لكلّ تلميذ (اسمه + رمز QR خاصّ). يطبعها
+    الأستاذ مرّةً ويوزّعها؛ بعدها يمسح كلُّ تلميذٍ بطاقتَه فيدخل بلا كتابةٍ ولا رمز.
+    الحلّ الجذريّ النهائيّ لعقبة الدخول على الهواتف."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        stmt = select(Student).where(Student.active.is_(True))
+        if group:
+            stmt = stmt.where(Student.group_name == group)
+        stmt = stmt.order_by(Student.group_name, Student.full_name)
+        students = (await s.execute(stmt)).scalars().all()
+        groups = [g for (g,) in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+    return templates.TemplateResponse(
+        "admin/cards.html",
+        _ctx(request, students=students, groups=groups, group=group,
+             base=_student_url()))
+
+
+@router.get("/cards/qr/{student_id}.png")
+async def student_card_qr(request: Request, student_id: int):
+    """رمز QR (PNG) لبطاقة تلميذٍ بعينه — يحمل رابط الدخول بلا كتابة."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        st = await s.get(Student, student_id)
+    if st is None:
+        return Response(status_code=404)
+    return Response(content=qr_png(_join_url(st)), media_type="image/png")
 
 
 @router.post("/backup")

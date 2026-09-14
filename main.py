@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from fastapi.responses import RedirectResponse
 
+from app import presence
 from app.database import DB_PATH, engine
 from app.db_bootstrap import ensure_head
 from app.netinfo import lan_url
@@ -83,11 +84,16 @@ app = FastAPI(title="PHILO-TECH", version="2.0.0", lifespan=lifespan)
 
 
 @app.middleware("http")
-async def _no_store_student(request, call_next):
-    """منع تخبئة صفحات التلميذ: بلا هذه الترويسة يخبّئ المتصفّح صفحة /student،
-    وإن انقطع وصول الهاتف لحظةً يعرض «نسخة offline» مجمّدةً لا تقبل الكتابة — فيظنّ
-    التلميذ أنّ لوحة المفاتيح معطّلة. مع no-store: إمّا الصفحة الحيّة أو خطأ اتصالٍ
-    صريحٌ يكشف أنّ العلّة في الشبكة لا في الواجهة."""
+async def _student_traffic(request, call_next):
+    """يخدم مساري التلميذ بأمرين معاً:
+    ١) منع التخبئة: بلا no-store يخبّئ المتصفّح /student، وإن انقطع الوصول لحظةً يعرض
+       «نسخة offline» مجمّدةً لا تقبل الكتابة فيُظنّ العطب في لوحة المفاتيح؛ مع no-store
+       تظهر إمّا الصفحة الحيّة أو خطأ اتصالٍ صريحٌ يكشف أنّ العلّة شبكيّة.
+    ٢) تسجيل الحضور: نلتقط IP الهاتف ليعرض الأستاذ عدّاد «هواتف متّصلة الآن» — فيرى
+       نجاح الربط فوراً بدل انتظار شكوى تلميذ."""
+    if request.url.path.startswith("/student"):
+        client = request.client.host if request.client else None
+        presence.touch(client)
     resp = await call_next(request)
     if request.url.path.startswith("/student"):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"

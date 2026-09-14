@@ -1,7 +1,10 @@
 {% extends "admin/base.html" %}
 {% block title %}التلاميذ · PHILO-TECH{% endblock %}
 {% block content %}
-<h2 class="h2 mb-3">التلاميذ</h2>
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+  <h2 class="h2 mb-0">التلاميذ</h2>
+  <a href="/admin/cards" class="btn btn-success btn-sm">🪪 بطاقات الدخول (مسح = دخول بلا كتابة)</a>
+</div>
 {% if added is not none %}
 <div class="alert alert-success">تمّ الحفظ: أُضيف {{ added }}، حُدِّث {{ updated }}.</div>
 {% endif %}

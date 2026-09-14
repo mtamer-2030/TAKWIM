@@ -1,0 +1,63 @@
+{% extends "admin/base.html" %}
+{% block title %}بطاقات الدخول · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-print-none">
+  <h2 class="h2 mb-1">بطاقات دخول التلاميذ (مسح واحد = دخول بلا كتابة)</h2>
+  <p class="text-secondary mb-2">
+    اطبع هذه البطاقات مرّةً وزّعها على التلاميذ. يمسح كلُّ تلميذٍ بطاقتَه بكاميرا هاتفه
+    فيدخل النظامَ باسمه مباشرةً — <b>بلا كتابة رمزٍ ولا كلمة سرّ</b>. الحلّ النهائيّ
+    لعقبة الدخول على الهواتف.
+  </p>
+
+  <div class="mb-3">
+    <a href="/admin/cards" class="btn btn-sm {{ '' if group else 'btn-primary' }}">كلّ الأقسام</a>
+    {% for gname in groups %}
+      <a href="/admin/cards?group={{ gname }}"
+         class="btn btn-sm {{ 'btn-primary' if group == gname else '' }}">{{ gname }}</a>
+    {% endfor %}
+    <button class="btn btn-success" onclick="window.print()">🖨️ طباعة البطاقات</button>
+  </div>
+
+  <div class="alert alert-info">
+    <b>تذكير الشبكة:</b> ليقرأ كلُّ هاتفٍ البطاقةَ، فعّل على الهاتف «وضع الطيران» ثمّ
+    شغّل WiFi واتّصل بشبكة الراوتر (بلا بيانات جوّال لا يُغادر الهاتفُ شبكة الراوتر).
+  </div>
+</div>
+
+{% if not students %}
+  <div class="alert alert-warning d-print-none">لا تلاميذ في هذا التصفية. استورد لائحة القسم أوّلاً.</div>
+{% endif %}
+
+<div class="pt-cards-grid">
+  {% for st in students %}
+  <div class="pt-idcard">
+    <div class="pt-idcard-name">{{ st.full_name }}</div>
+    <div class="pt-idcard-group">{{ st.group_name or '' }}</div>
+    <img class="pt-idcard-qr" src="/admin/cards/qr/{{ st.id }}.png"
+         alt="رمز دخول {{ st.full_name }}" width="150" height="150"
+         style="image-rendering:pixelated">
+    <div class="pt-idcard-code" dir="ltr">{{ st.login_code or st.massar_code or '' }}</div>
+    <div class="pt-idcard-hint">امسح الرمز بكاميرا الهاتف</div>
+  </div>
+  {% endfor %}
+</div>
+
+<style>
+  .pt-cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .pt-idcard { border: 1.5px dashed #b6c2d6; border-radius: 12px; padding: 12px 8px;
+    text-align: center; break-inside: avoid; background: #fff; }
+  .pt-idcard-name { font-weight: 800; font-size: 1rem; line-height: 1.25; }
+  .pt-idcard-group { color: #64748b; font-size: .82rem; margin-bottom: 6px; }
+  .pt-idcard-qr { width: 150px; height: 150px; max-width: 100%; }
+  .pt-idcard-code { direction: ltr; font-family: monospace; font-size: .95rem;
+    letter-spacing: .04em; margin-top: 4px; color: #1a2233; }
+  .pt-idcard-hint { color: #94a3b8; font-size: .72rem; margin-top: 2px; }
+  @media print {
+    .d-print-none { display: none !important; }
+    .pt-cards-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .pt-idcard { border-color: #999; }
+    @page { margin: 8mm; }
+  }
+  @media (max-width: 700px) { .pt-cards-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}

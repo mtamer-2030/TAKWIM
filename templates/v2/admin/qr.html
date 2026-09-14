@@ -23,10 +23,46 @@
   </div>
 </div>
 
+<div class="card mt-3 d-print-none" style="border-color:#12489e">
+  <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <div class="text-secondary">هواتف متّصلة الآن (آخر دقيقة ونصف):</div>
+      <div class="h1 mb-0" id="connCount" style="color:#12489e">…</div>
+    </div>
+    <div class="text-secondary" style="max-width:24rem">
+      اطلب من تلميذٍ أن يمسح الرمز؛ إن ارتفع الرقمُ فالشبكة سليمة. إن بقي
+      <b>صفراً</b> رغم المحاولة فالعلّة شبكيّة: راجع «وضع الطيران + WiFi» وجدار الحماية.
+    </div>
+  </div>
+</div>
+
+<div class="alert alert-success mt-3 d-print-none">
+  <b>الأسهل للتلاميذ — دخولٌ بلا كتابة:</b>
+  <a href="/admin/cards" class="btn btn-success btn-sm ms-2">🪪 بطاقات الدخول (رمز لكلّ تلميذ)</a>
+  اطبعها ووزّعها؛ يمسح كلُّ تلميذٍ بطاقتَه فيدخل باسمه مباشرةً بلا رمزٍ ولا كتابة.
+</div>
+
 <div class="alert alert-info mt-3 d-print-none">
   <b>ملاحظة:</b> يتغيّر العنوان تلقائياً حسب عنوان الحاسوب على الشبكة المحلّية.
   إن كان ثابتاً على <code dir="ltr">192.168.1.50</code> فالرمز يبقى صالحاً كل السنة.
   إن رأى التلاميذ «تعذّر الاتصال»، تأكّد من فتح المنفذ 8000 في جدار الحماية،
   ومن أنّ الهواتف على واي‑فاي الراوتر نفسه.
 </div>
+
+<script>
+// عدّاد حيّ: يستعلم كلّ ٣ ثوانٍ عن عدد الهواتف التي زارت مسار التلميذ — يجعل نجاح
+// الاتصال مرئيّاً فوراً بدل انتظار شكوى تلميذ.
+(function () {
+  var el = document.getElementById('connCount');
+  if (!el) return;
+  function tick() {
+    fetch('/admin/connected', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) el.textContent = d.count; })
+      .catch(function () { /* تجاهل انقطاعاً عابراً */ });
+  }
+  tick();
+  setInterval(tick, 3000);
+})();
+</script>
 {% endblock %}
