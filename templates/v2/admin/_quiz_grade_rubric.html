@@ -1,0 +1,49 @@
+<div class="card mb-2 rubric-card" id="rubric-{{ item.q.id }}">
+  <form hx-post="/admin/quizzes/{{ quiz_id }}/grade/rubric"
+        hx-target="#rubric-{{ item.q.id }}" hx-swap="outerHTML">
+    <input type="hidden" name="question_id" value="{{ item.q.id }}">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+        <div style="font-weight:600">{{ item.q.prompt }}
+          <span class="text-secondary" style="font-weight:400;font-size:.8rem">· {{ item.q.max_score }} ن</span></div>
+        {% if saved %}<span class="badge bg-green">✓ حُفظت المعايير</span>{% endif %}
+      </div>
+
+      <div class="row g-2 mb-2">
+        <div class="col-md-5">
+          <label class="form-label" style="font-size:.85rem">الكفاية / المهارة</label>
+          <select name="competency" class="form-select form-select-sm">
+            <option value="">— بلا كفاية —</option>
+            {% for key, ar in competencies %}
+            <option value="{{ key }}" {{ 'selected' if item.competency==key }}>{{ ar }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <label class="form-label" style="font-size:.85rem">مؤشّرات النجاح / عناصر الإجابة
+        <span class="text-secondary" style="font-weight:400">(يصحّح بها المحرّك المحلّي)</span></label>
+      <div class="rubric-inds">
+        {% for ind in item.indicators %}
+        <div class="d-flex gap-2 mb-1 rubric-ind">
+          <input type="text" name="ind_text" class="form-control form-control-sm"
+                 value="{{ ind.text }}" placeholder="نصّ المؤشّر">
+          <input type="number" step="0.25" min="0" name="ind_points" style="width:5.5rem"
+                 class="form-control form-control-sm" value="{{ ind.points }}" placeholder="نقطة">
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="rbRm(this)">×</button>
+        </div>
+        {% endfor %}
+        <div class="d-flex gap-2 mb-1 rubric-ind">
+          <input type="text" name="ind_text" class="form-control form-control-sm" placeholder="نصّ المؤشّر">
+          <input type="number" step="0.25" min="0" name="ind_points" style="width:5.5rem"
+                 class="form-control form-control-sm" placeholder="نقطة">
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="rbRm(this)">×</button>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button class="btn btn-sm btn-primary">حفظ المعايير</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rbAdd(this)">+ مؤشّر</button>
+      </div>
+    </div>
+  </form>
+</div>

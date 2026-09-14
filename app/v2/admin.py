@@ -40,6 +40,7 @@ from ..models import (
     QuizQuestion,
     QuizSession,
     SessionStudent,
+    Skill,
     Student,
     StudentReport,
     TextType,
@@ -49,7 +50,7 @@ from ..netinfo import lan_url
 from ..qrcodes import qr_png
 from ..services.analytics import generate_class_report, generate_student_skill_profile
 from ..services.gradebook import class_gradebook, student_gradebook
-from ..constants import (COMPETENCIES, DISPLAY_TYPES, KINDS,
+from ..constants import (COMPETENCIES, COMPETENCY_TO_SKILL, DISPLAY_TYPES, KINDS,
                          QUESTION_TYPES_CLOSED, level_of_class_label)
 from ..services.quizzes import (
     QuizImportError,
@@ -59,6 +60,7 @@ from ..services.quizzes import (
     heuristic_quiz_from_text,
     normalize_quiz_json,
     readable_answer,
+    resolve_skill_id,
 )
 from ..settings import settings
 from .web import (
@@ -1123,11 +1125,14 @@ async def quiz_grade_page(request: Request, quiz_id: int):
         return g
     async with AsyncSessionLocal() as s:
         quiz, questions = await _grade_view(s, quiz_id)
-    if quiz is None:
-        return HTMLResponse("التقويم غير موجود", status_code=404)
+        if quiz is None:
+            return HTMLResponse("التقويم غير موجود", status_code=404)
+        # محرّر المعايير للأسئلة المفتوحة فقط (الكفاية + مؤشّرات النجاح للتصحيح الآليّ).
+        rubric = [await _rubric_item(s, it["q"]) for it in questions if not it["closed"]]
     return templates.TemplateResponse(
         "admin/quiz_grade.html",
-        _ctx(request, quiz=quiz, questions=questions,
+        _ctx(request, quiz=quiz, questions=questions, rubric=rubric,
+             competencies=list(COMPETENCIES.items()),
              online=ollama_available(),
              ai_msg=request.query_params.get("ai")))
 
@@ -1228,6 +1233,62 @@ async def quiz_grade_save(request: Request, quiz_id: int):
         return templates.TemplateResponse(
             "admin/_quiz_grade_rows.html", _ctx(request, quiz=quiz, questions=questions))
     return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade", status_code=303)
+
+
+def _skill_to_competency() -> dict:
+    """عكس COMPETENCY_TO_SKILL (اسم المهارة → مفتاح الكفاية) لاختيار الكفاية مسبقاً."""
+    return {v: k for k, v in COMPETENCY_TO_SKILL.items()}
+
+
+async def _rubric_item(s, q) -> dict:
+    """يبني بيانات محرّر المعايير لسؤالٍ مفتوح: الكفاية الحاليّة + مؤشّرات النجاح."""
+    comp = ""
+    if q.skill_id is not None:
+        sk = await s.get(Skill, q.skill_id)
+        if sk is not None:
+            comp = _skill_to_competency().get(sk.name, "")
+    return {"q": q, "competency": comp, "indicators": q.indicators or []}
+
+
+@router.post("/quizzes/{quiz_id}/grade/rubric")
+async def quiz_grade_rubric(request: Request, quiz_id: int):
+    """يحفظ معايير تصحيح سؤالٍ مفتوح: الكفاية + مؤشّرات النجاح (نصّ + نقطة لكلّ مؤشّر).
+
+    تُخزَّن في السؤال نفسه فيستعملها التصحيح المُعان (Ollama) لاقتراح النقط، ثمّ
+    يصادق الأستاذ. عناصر الإجابة = مؤشّرات النجاح (تخزينٌ موحَّد)."""
+    if (g := require_admin(request)):
+        return g
+    form = await request.form()
+    try:
+        qid = int(form.get("question_id") or 0)
+    except (TypeError, ValueError):
+        qid = 0
+    competency = (form.get("competency") or "").strip()
+    texts = form.getlist("ind_text")
+    points = form.getlist("ind_points")
+    skills = await skill_id_map()
+    async with AsyncSessionLocal() as s:
+        q = await s.get(QuizQuestion, qid)
+        if q is None or q.quiz_id != quiz_id:
+            return HTMLResponse("السؤال غير موجود", status_code=404)
+        q.skill_id = resolve_skill_id(competency, skills)
+        inds = []
+        for t, p in zip(texts, points):
+            t = (t or "").strip()
+            if not t:
+                continue
+            try:
+                pts = round(float(p), 2)
+            except (TypeError, ValueError):
+                pts = 0.0
+            inds.append({"id": f"i{len(inds) + 1}", "text": t, "points": pts})
+        q.indicators = inds or None
+        await s.commit()
+        item = await _rubric_item(s, q)
+        return templates.TemplateResponse(
+            "admin/_quiz_grade_rubric.html",
+            _ctx(request, quiz_id=quiz_id, item=item,
+                 competencies=list(COMPETENCIES.items()), saved=True))
 
 
 # ═══════════════ الجلسات الصفّية (فتح/إغلاق + حضور + متابعة آنية + قفل) ═══════════════

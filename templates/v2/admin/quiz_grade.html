@@ -10,10 +10,24 @@
 
 {% if ai_msg %}<div class="alert alert-info">{{ ai_msg }}</div>{% endif %}
 
+{% if rubric %}
+<details class="card mb-3" {% if not online %}open{% endif %}>
+  <summary class="card-header" style="cursor:pointer;list-style:revert">
+    <b>معايير التصحيح والكفايات</b>
+    <span class="text-secondary" style="font-size:.85rem">— حرّر عناصر الإجابة والكفاية ومؤشّرات النجاح لكلّ سؤال مفتوح، ثمّ اطلب اقتراح النقط.</span>
+  </summary>
+  <div class="card-body">
+    {% for item in rubric %}
+      {% include "admin/_quiz_grade_rubric.html" %}
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
 <div class="card mb-3"><div class="card-body d-flex justify-content-between align-items-center flex-wrap">
   <div>
     <b>التصحيح المسائي المُعان (Ollama):</b>
-    <span class="text-secondary">يقترح المحرّك المحلّي نقط الأسئلة المفتوحة — اقتراحٌ لا حكم، تراجعه وتصادق.</span>
+    <span class="text-secondary">يقترح المحرّك المحلّي نقط الأسئلة المفتوحة بناءً على المؤشّرات أعلاه — اقتراحٌ لا حكم، تراجعه وتصادق.</span>
   </div>
   <form method="post" action="/admin/quizzes/{{ quiz.id }}/grade/ai"
         onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='...جارٍ الاقتراح';">
@@ -43,6 +57,19 @@ function markAllGradable() {
     var score = tr.querySelector('input[type=number][name^="score_"]');
     if (!score || (score.value || '').trim() !== '') cb.checked = true;
   });
+}
+// محرّر مؤشّرات النجاح: إضافة/حذف صفّ مؤشّر (نصّ + نقطة).
+function rbAdd(btn) {
+  var list = btn.closest('.card-body').querySelector('.rubric-inds');
+  var row = list.querySelector('.rubric-ind').cloneNode(true);
+  row.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+  list.appendChild(row);
+}
+function rbRm(btn) {
+  var list = btn.closest('.rubric-inds');
+  var rows = list.querySelectorAll('.rubric-ind');
+  if (rows.length > 1) btn.closest('.rubric-ind').remove();
+  else btn.closest('.rubric-ind').querySelectorAll('input').forEach(function (i) { i.value = ''; });
 }
 </script>
 {% endblock %}
