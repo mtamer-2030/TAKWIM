@@ -10,9 +10,16 @@
     </div>
     {% if error %}<div class="pt-card" style="border-color:#e53935;color:#b71c1c">{{ error }}</div>{% endif %}
     <form method="post" action="/student/login">
-      <input name="code" class="pt-input" autocomplete="off" autocapitalize="characters"
-             inputmode="text" placeholder="مثال: D161055238" required autofocus
-             onclick="this.focus()">
+      <!-- تسمية مرتبطة بالحقل: لمسُها يُركّز الحقل ويرفع لوحة المفاتيح على كلّ
+           الهواتف. لا نستعمل autofocus ولا focus()‎ برمجيّاً — على أندرويد/المتصفّحات
+           المدمجة يجعل الحقل «مركَّزاً» سلفاً فلا يرفع لمسُه لاحقاً لوحة المفاتيح. -->
+      <label for="code" class="muted"
+             style="display:block;text-align:center;margin-bottom:.5rem;font-weight:700">
+        اضغط هنا واكتب رمزك ⌨️</label>
+      <input id="code" name="code" class="pt-input" type="text"
+             autocomplete="off" autocapitalize="characters" autocorrect="off"
+             spellcheck="false" inputmode="text" enterkeyhint="go"
+             placeholder="مثال: D161055238" required value="{{ code or '' }}">
       <div style="height:1rem"></div>
       <button class="pt-btn" type="submit">دخول</button>
     </form>

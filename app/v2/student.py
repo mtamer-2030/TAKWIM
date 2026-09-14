@@ -51,7 +51,10 @@ async def _load_student(request: Request) -> Student | None:
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def login_page(request: Request):
-    return templates.TemplateResponse("student/login.html", _ctx(request))
+    # دخولٌ بلا كتابة: رابط/رمز QR يحمل ?code=... يملأ الحقل مسبقاً، فيكفي التلميذَ
+    # نقرُ «دخول» دون لوحة مفاتيح (مفيدٌ للهواتف التي تعاند إظهار اللوحة).
+    code = (request.query_params.get("code") or "").strip().upper()
+    return templates.TemplateResponse("student/login.html", _ctx(request, code=code))
 
 
 async def _find_by_code(code: str) -> Student | None:
