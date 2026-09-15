@@ -76,13 +76,18 @@
   var evals = {{ data.evaluations | map(attribute='date') | list | tojson }};
   var avgs = {{ data.evaluations | map(attribute='class_avg') | list | tojson }};
   var el = document.getElementById("classTrend");
-  if (el && window.Chart) new Chart(el, {
+  function draw(){
+    if (!el) return;
+    new Chart(el, {
     type: "line",
     data: { labels: evals, datasets: [{ label: "معدّل القسم ٪", data: avgs,
             borderColor: "#0d47a1", backgroundColor: "rgba(13,71,161,.12)", fill: true, tension: .3 }] },
     options: { plugins: { legend: { display: false } },
                scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "٪" } } } }
-  });
+    });
+  }
+  // Chart.js مؤجَّل (defer)؛ ننتظر تحميله قبل الرسم.
+  (function ready(){ if (window.Chart) draw(); else setTimeout(ready, 50); })();
 })();
 </script>
 {% endif %}

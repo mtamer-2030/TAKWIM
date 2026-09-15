@@ -58,6 +58,7 @@
 <script>
 (function(){
   var c = {{ chart|safe }}, r = {{ radar|safe }};
+  function draw(){
   if (window.Chart && document.getElementById("trend"))
     new Chart(document.getElementById("trend"), {
       type: "line",
@@ -74,6 +75,9 @@
       options: { plugins: { legend: { display: false } },
                  scales: { r: { min: 0, max: 100, ticks: { display: false } } } }
     });
+  }
+  // Chart.js مؤجَّل (defer)؛ ننتظر تحميله قبل الرسم وإلّا بقيت اللوحات فارغة.
+  (function ready(){ if (window.Chart) draw(); else setTimeout(ready, 50); })();
 })();
 </script>
 {% endif %}
