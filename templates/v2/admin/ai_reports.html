@@ -24,27 +24,61 @@
   <div class="alert alert-info">لا بيانات مصادَقٌ عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً،
     أو استورد نقطاً، لتظهر التقارير.</div>
 {% else %}
-  {% if not has_plans %}
-  <div class="alert alert-warning d-print-none">
-    تُعرَض <b>خلاصة المهارات الحتميّة</b> (تعمل بلا Ollama). لإضافة <b>خطط التدخّل الذكيّة</b>
-    (نصّ)، شغّل Ollama ثمّ ولّد التقارير من صفحة «التوليد (AI)».
-  </div>
-  {% endif %}
+  {% set cp = data.class.peda %}
 
-  <!-- تقرير القسم -->
+  <!-- ملخّص القسم -->
+  <div class="row row-cards mb-3">
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+      <div class="h1 m-0" style="color:#12489e">{{ cp.overall_pct if cp.overall_pct is not none else '—' }}{{ '٪' if cp.overall_pct is not none else '' }}</div>
+      <div class="text-secondary">المعدّل العامّ للقسم</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+      <div class="h1 m-0">{{ cp.students_with_data }}/{{ cp.student_count }}</div>
+      <div class="text-secondary">تلاميذ لهم بيانات</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+      <div class="h3 m-0" style="color:#2e7d32">{{ cp.strongest or '—' }}</div>
+      <div class="text-secondary">أقوى كفاية</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body text-center">
+      <div class="h3 m-0" style="color:#c62828">{{ cp.weakest or '—' }}</div>
+      <div class="text-secondary">أضعف كفاية</div></div></div></div>
+  </div>
+
   <div class="card mb-3">
     <div class="card-header"><h3 class="card-title m-0">📊 التقرير الجماعيّ — الفوج {{ group }}</h3></div>
     <div class="card-body">
-      <p><b>أضعف مهارةٍ للقسم:</b> <span class="badge bg-red">{{ data.class.weakest or '—' }}</span></p>
-      <div class="row">
-        {% for name, sk in data.class.skills.items() %}
-        <div class="col-md-4 mb-1">{{ name }}:
-          <b>{{ (sk.avg * 100)|round(1) if sk.avg is not none else '—' }}{{ '٪' if sk.avg is not none else '' }}</b>
-        </div>
+      {% if cp.dominant_deficit %}
+      <p><b>القصور المنهجيّ المهيمن:</b> <span class="badge bg-red">{{ cp.dominant_deficit }}</span>
+        {% if cp.dominant_share_pct %}<span class="text-secondary">— هو أضعف كفايةٍ لدى {{ cp.dominant_share_pct }}٪ من التلاميذ</span>{% endif %}</p>
+      {% endif %}
+
+      <h4 class="mt-2">تمكّن القسم من الكفايات</h4>
+      <div class="table-responsive"><table class="table table-sm table-vcenter">
+        <thead><tr><th>الكفاية</th><th>النسبة</th><th>التقدير</th><th>عدد الأجوبة</th></tr></thead>
+        <tbody>
+        {% for d in cp.detail %}
+          <tr><td>{{ d.name }}</td>
+              <td><b>{{ d.pct if d.pct is not none else '—' }}{{ '٪' if d.pct is not none else '' }}</b></td>
+              <td><span class="badge" style="background:{{ d.color }}">{{ d.band }}</span></td>
+              <td class="text-secondary">{{ d.count if d.count is not none else '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+
+      <h4 class="mt-3">توزيع مستويات التلاميذ</h4>
+      <div class="d-flex flex-wrap gap-2">
+        {% for lvl, n in cp.distribution.items() %}
+        <span class="st-pill {{ 'ok' if lvl=='متمكّن' else ('info' if lvl=='جيّد' else 'warn') }}">{{ lvl }}: {{ n }}</span>
         {% endfor %}
       </div>
+
+      <h4 class="mt-3">توصيات الدعم البيداغوجيّ</h4>
+      {% for r in cp.recommendations %}
+        <div class="mb-2"><b style="color:#12489e">• {{ r.skill }}:</b> {{ r.advice }}</div>
+      {% else %}
+        <div class="text-secondary">أداء القسم متوازن — لا قصور بارز.</div>
+      {% endfor %}
+
       {% if data.class.plan %}
-      <hr><b>خطّة الدعم (AI):</b>
+      <hr><h4>خطّة الدعم (توليد ذكيّ)</h4>
       <div style="white-space:pre-wrap;line-height:1.9">{{ data.class.plan }}</div>
       {% endif %}
     </div>
@@ -53,20 +87,33 @@
   <!-- التقارير الفردية -->
   <h3 class="h3 mb-2">👤 التقارير الفردية ({{ data.students|length }} تلميذ)</h3>
   {% for stu in data.students %}
+  {% set sp = stu.peda %}
   <div class="card mb-2"><div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
-      <b>{{ stu.student.full_name }}</b>
+    <div class="d-flex justify-content-between align-items-center flex-wrap">
+      <div><b>{{ stu.student.full_name }}</b>
+        {% if stu.has_data %}
+        <span class="text-secondary">— المعدّل: <b>{{ sp.overall_pct if sp.overall_pct is not none else '—' }}{{ '٪' if sp.overall_pct is not none else '' }}</b> ({{ sp.overall_band }})</span>
+        {% endif %}
+      </div>
       <a class="btn btn-sm btn-outline-primary d-print-none"
          href="/admin/gradebook/student/{{ stu.student.id }}/export?fmt=docx">⬇ Word فرديّ</a>
     </div>
     {% if stu.has_data %}
-    <div class="row mt-2">
-      {% for name, sk in stu.skills.items() %}
-      <div class="col-md-4" style="font-size:.9rem">{{ name }}:
-        <b>{{ (sk.avg * 100)|round(1) if sk.avg is not none else '—' }}{{ '٪' if sk.avg is not none else '' }}</b></div>
+    <div class="mt-2" style="font-size:.9rem">
+      <span style="color:#2e7d32">القوّة: <b>{{ sp.strongest or '—' }}</b></span> ·
+      <span style="color:#c62828">القصور: <b>{{ sp.weakest or '—' }}</b></span>
+    </div>
+    <div class="row mt-1">
+      {% for d in sp.detail %}
+      <div class="col-md-4" style="font-size:.88rem">{{ d.name }}:
+        <b>{{ d.pct if d.pct is not none else '—' }}{{ '٪' if d.pct is not none else '' }}</b>
+        <span class="badge" style="background:{{ d.color }}">{{ d.band }}</span></div>
       {% endfor %}
     </div>
-    {% if stu.plan %}<div class="mt-2" style="white-space:pre-wrap;line-height:1.8;font-size:.92rem">{{ stu.plan }}</div>{% endif %}
+    {% for r in sp.recommendations %}
+      <div class="mt-1" style="font-size:.88rem"><b style="color:#12489e">توصية — {{ r.skill }}:</b> {{ r.advice }}</div>
+    {% endfor %}
+    {% if stu.plan %}<div class="mt-2" style="white-space:pre-wrap;line-height:1.8;font-size:.9rem"><b>خطّة ذكيّة:</b> {{ stu.plan }}</div>{% endif %}
     {% else %}
     <div class="text-secondary mt-1">لا بيانات مصادَقٌ عليها بعد.</div>
     {% endif %}

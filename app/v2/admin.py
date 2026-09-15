@@ -794,8 +794,10 @@ async def ai_run(request: Request, group_name: str = Form(...),
 
 
 async def _ai_reports_data(s, group: str) -> dict:
-    """يجمع تقارير التدخّل للقراءة/التصدير: تحليل المهارات الحتميّ للقسم وكلّ تلميذ
-    (يعمل بلا Ollama)، مع خطط الذكاء المخزّنة إن وُلِّدت سابقاً."""
+    """يجمع تقارير التدخّل للقراءة/التصدير مع قراءةٍ بيداغوجيّة كاملة (بلا Ollama):
+    تصنيف نوعيّ للمهارات، توزيع مستويات القسم، نقاط القوّة/القصور، وتوصيات دعمٍ عمليّة —
+    جماعيّاً وفرديّاً؛ مع خطط الذكاء المخزّنة إن وُلِّدت سابقاً."""
+    from ..services.pedagogy import class_pedagogy, student_pedagogy
     class_rep = await generate_class_report(s, group)
     class_plan = await s.scalar(
         select(ClassReport.ai_intervention_plan)
@@ -806,20 +808,24 @@ async def _ai_reports_data(s, group: str) -> dict:
         select(Student).where(Student.group_name == group, Student.active.is_(True))
         .order_by(Student.full_name))).scalars().all()
     stu = []
+    overalls: list = []
     for st in students:
         prof = await generate_student_skill_profile(s, st.id)
+        overalls.append(prof.get("overall"))
         plan = await s.scalar(
             select(StudentReport.ai_intervention_plan)
             .where(StudentReport.student_id == st.id,
                    StudentReport.ai_intervention_plan.is_not(None))
             .order_by(StudentReport.created_at.desc()).limit(1))
         stu.append({"student": st, "skills": prof.get("skills") or {},
-                    "has_data": prof.get("has_data"), "plan": plan})
+                    "has_data": prof.get("has_data"), "plan": plan,
+                    "peda": student_pedagogy(prof)})
     return {
         "group": group,
         "class": {"skills": class_rep.get("skills") or {},
                   "weakest": class_rep.get("dominant_deficit"),
-                  "plan": class_plan, "has_data": class_rep.get("has_data")},
+                  "plan": class_plan, "has_data": class_rep.get("has_data"),
+                  "peda": class_pedagogy(class_rep, overalls)},
         "students": stu,
     }
 
