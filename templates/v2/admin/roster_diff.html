@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+{% block title %}تقرير تغييرات اللوائح · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
+  <h2 class="h2 m-0">تقرير التغييرات — مَن نُقِل ومَن أُضيف</h2>
+  <a class="btn btn-outline-secondary" href="/admin/rosters">→ التلاميذ</a>
+</div>
+
+<div class="card mb-3 d-print-none"><div class="card-body">
+  <p class="text-secondary">
+    ارفع <b>النسخة الاحتياطيّة التي أخذتها قبل استيراد اللوائح</b> (ملفّ <code dir="ltr">.db</code>).
+    يقارنها البرنامج بالحالة الحاليّة ويُظهر مَن تغيّر فوجه (نُقِل) ومَن أُضيف جديداً — قراءةٌ فقط، لا يُعدّل شيئاً.
+  </p>
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+  <form method="post" action="/admin/roster-diff" enctype="multipart/form-data" class="row g-2">
+    <div class="col-md-8">
+      <input name="backup" type="file" accept=".db" class="form-control" required>
+    </div>
+    <div class="col-md-4">
+      <button class="btn btn-primary w-100">قارن وأظهر التقرير</button>
+    </div>
+  </form>
+</div></div>
+
+{% if done %}
+<div class="d-flex flex-wrap gap-3 mb-3">
+  <div class="card flex-fill"><div class="card-body text-center">
+    <div class="h1 m-0" style="color:#12489e">{{ moved|length }}</div>
+    <div class="text-secondary">نُقِل (تغيّر فوجه)</div></div></div>
+  <div class="card flex-fill"><div class="card-body text-center">
+    <div class="h1 m-0" style="color:#2e7d32">{{ added|length }}</div>
+    <div class="text-secondary">أُضيف جديداً</div></div></div>
+  <div class="card flex-fill"><div class="card-body text-center">
+    <div class="h3 m-0">{{ old_count }} → {{ cur_count }}</div>
+    <div class="text-secondary">عدد التلاميذ (قبل → الآن)</div></div></div>
+</div>
+
+<div class="mb-2 d-print-none">
+  <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">🖨️ طباعة</button>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><h3 class="card-title m-0">🔄 نُقِلوا إلى فوجٍ جديد ({{ moved|length }})</h3></div>
+  <div class="table-responsive"><table class="table table-vcenter">
+    <thead><tr><th>التلميذ</th><th>رمز مسار</th><th>من فوج</th><th>إلى فوج</th></tr></thead>
+    <tbody>
+    {% for r in moved %}
+      <tr><td>{{ r.name }}</td><td class="text-secondary" dir="ltr">{{ r.massar }}</td>
+          <td><span class="badge bg-secondary">{{ r.old }}</span></td>
+          <td><span class="badge bg-blue">{{ r.new }}</span></td></tr>
+    {% else %}
+      <tr><td colspan="4" class="text-secondary text-center py-3">لا أحد نُقِل.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3 class="card-title m-0">🆕 تلاميذ جُدُد أُضيفوا ({{ added|length }})</h3></div>
+  <div class="table-responsive"><table class="table table-vcenter">
+    <thead><tr><th>التلميذ</th><th>رمز مسار</th><th>الفوج</th></tr></thead>
+    <tbody>
+    {% for r in added %}
+      <tr><td>{{ r.name }}</td><td class="text-secondary" dir="ltr">{{ r.massar }}</td>
+          <td><span class="badge bg-green">{{ r.group }}</span></td></tr>
+    {% else %}
+      <tr><td colspan="3" class="text-secondary text-center py-3">لا تلاميذ جُدُد.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="alert alert-info mt-3 d-print-none">
+  <b>ملاحظة:</b> «نُقِل» = تلميذٌ كان موجوداً وتغيّر فوجه (احتفظ بأجوبته ونقطه). «أُضيف» =
+  تلميذٌ جديدٌ لم يكن في النسخة السابقة. إن ظهر عددٌ كبيرٌ في «أُضيف» بينما كنتَ تتوقّع
+  «نُقِل»، فالمطابقة برمز مسار لم تحصل (اختلاف الأرقام) — يمكن الاستعادة من النسخة الاحتياطيّة.
+</div>
+{% endif %}
+{% endblock %}

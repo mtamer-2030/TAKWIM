@@ -569,6 +569,79 @@ async def student_add(request: Request, full_name: str = Form(...),
         f"/admin/rosters?new_code={quote(code)}&new_name={quote(name)}", status_code=303)
 
 
+def _read_backup_students(data: bytes):
+    """يقرأ (الاسم، رمز مسار، الفوج) لكلّ تلميذ من ملفّ نسخةٍ احتياطيّة (.db) — للقراءة
+    فقط، في ملفٍّ مؤقّت، دون أن يمسّ قاعدة النظام الحيّة."""
+    import os
+    import sqlite3
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix=".db")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        con = sqlite3.connect(path)
+        try:
+            return con.execute(
+                "SELECT full_name, massar_code, group_name FROM students").fetchall()
+        finally:
+            con.close()
+    finally:
+        os.unlink(path)
+
+
+def _student_key(name: str | None, massar: str | None) -> str:
+    """مفتاح مطابقةٍ للتلميذ: رمز مسار إن وُجد، وإلّا الاسم — لمقارنة نسختين."""
+    if massar and str(massar).strip():
+        return "m:" + str(massar).strip().upper()
+    return "n:" + (name or "").strip()
+
+
+@router.get("/roster-diff", response_class=HTMLResponse)
+async def roster_diff_page(request: Request):
+    """أداة «تقرير التغييرات»: قارن نسخةً احتياطيّة سابقة بالحالة الحاليّة لترى مَن نُقِل
+    (تغيّر فوجه) ومَن أُضيف جديداً — بنظرة، بعد استيراد لائحة."""
+    if (g := require_admin(request)):
+        return g
+    return templates.TemplateResponse("admin/roster_diff.html", _ctx(request))
+
+
+@router.post("/roster-diff", response_class=HTMLResponse)
+async def roster_diff_run(request: Request, backup: UploadFile = File(...)):
+    if (g := require_admin(request)):
+        return g
+    data = await backup.read()
+    try:
+        old_rows = await asyncio.to_thread(_read_backup_students, data)
+    except Exception as exc:  # noqa: BLE001
+        return templates.TemplateResponse(
+            "admin/roster_diff.html",
+            _ctx(request, error=f"تعذّرت قراءة الملفّ كنسخة قاعدة بيانات: {exc}"),
+            status_code=400)
+    old = {}
+    for name, massar, group in old_rows:
+        old[_student_key(name, massar)] = (name, massar, group)
+    async with AsyncSessionLocal() as s:
+        cur_rows = (await s.execute(
+            select(Student.full_name, Student.massar_code, Student.group_name)
+            .order_by(Student.group_name, Student.full_name))).all()
+    moved, added = [], []
+    for name, massar, group in cur_rows:
+        k = _student_key(name, massar)
+        if k in old:
+            old_group = old[k][2]
+            if (old_group or "") != (group or ""):
+                moved.append({"name": name, "massar": massar or "—",
+                              "old": old_group or "—", "new": group or "—"})
+        else:
+            added.append({"name": name, "massar": massar or "—", "group": group or "—"})
+    moved.sort(key=lambda r: (r["new"], r["name"]))
+    added.sort(key=lambda r: (r["group"], r["name"]))
+    return templates.TemplateResponse(
+        "admin/roster_diff.html",
+        _ctx(request, done=True, moved=moved, added=added,
+             old_count=len(old), cur_count=len(cur_rows)))
+
+
 # ═══════════════ التدخّل العلاجي (الذكاء الاصطناعي المحلّي) ═══════════════
 
 
