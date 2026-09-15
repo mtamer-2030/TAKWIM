@@ -1188,23 +1188,37 @@ async def quiz_edit_page(request: Request, quiz_id: int):
     if (g := require_admin(request)):
         return g
     from sqlalchemy.orm import selectinload
-    async with AsyncSessionLocal() as s:
-        quiz = (await s.execute(
-            select(Quiz).where(Quiz.id == quiz_id)
-            .options(selectinload(Quiz.questions)))).scalar_one_or_none()
-        if quiz is None:
-            return HTMLResponse("التقويم غير موجود", status_code=404)
-        qs = sorted(quiz.questions, key=lambda q: (q.position, q.id))
-        items = [{
-            "q": q,
-            "is_mcq": q.qtype in ("mcq_single", "mcq_multi"),
-            "is_display": q.qtype in DISPLAY_TYPES,
-            "opts_text": _opts_text(q),
-        } for q in qs]
-    return templates.TemplateResponse(
-        "admin/quiz_edit.html",
-        _ctx(request, quiz=quiz, items=items,
-             saved=request.query_params.get("saved")))
+    try:
+        async with AsyncSessionLocal() as s:
+            quiz = (await s.execute(
+                select(Quiz).where(Quiz.id == quiz_id)
+                .options(selectinload(Quiz.questions)))).scalar_one_or_none()
+            if quiz is None:
+                return HTMLResponse("التقويم غير موجود", status_code=404)
+            qs = sorted(quiz.questions, key=lambda q: (q.position, q.id))
+            items = [{
+                "q": q,
+                "is_mcq": q.qtype in ("mcq_single", "mcq_multi"),
+                "is_display": q.qtype in DISPLAY_TYPES,
+                "opts_text": _opts_text(q),
+            } for q in qs]
+        return templates.TemplateResponse(
+            "admin/quiz_edit.html",
+            _ctx(request, quiz=quiz, items=items,
+                 saved=request.query_params.get("saved")))
+    except Exception as exc:  # noqa: BLE001 — بدل «Internal Server Error» الغامض: أظهر السبب
+        import html as _html
+        import traceback as _tb
+        tb = _html.escape(_tb.format_exc())
+        return HTMLResponse(
+            "<div dir='rtl' style='font-family:sans-serif;padding:1.5rem;max-width:60rem;margin:auto'>"
+            "<h2 style='color:#b71c1c'>تعذّر فتح محرّر هذا التقويم</h2>"
+            f"<p><b>السبب:</b> {_html.escape(type(exc).__name__)}: {_html.escape(str(exc))}</p>"
+            "<p>أرسِل هذا النصّ للمطوّر لإصلاحه فوراً، أو استعمل «حذف» لهذا التقويم "
+            "وأعِد استيراده. بقيّة التقويمات غير متأثّرة.</p>"
+            f"<pre style='background:#f6f8fa;padding:1rem;overflow:auto;font-size:.8rem'>{tb}</pre>"
+            "<a href='/admin/quizzes'>→ رجوع إلى التقويمات</a></div>",
+            status_code=200)
 
 
 @router.post("/quizzes/{quiz_id}/edit")
