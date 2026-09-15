@@ -137,6 +137,61 @@ def class_report_docx(data: dict) -> bytes:
     buf = io.BytesIO(); doc.save(buf); return buf.getvalue()
 
 
+def ai_reports_docx(data: dict) -> bytes:
+    """تقارير التدخّل (قسم «التدخل AI») في Word: تقرير القسم (المهارات + أضعفها + خطّة
+    الدعم إن وُلِّدت) ثمّ تقريرٌ فرديّ لكلّ تلميذ (ملمح مهاراته + خطّته)."""
+    group = data.get("group", "")
+    doc = _new_doc(f"تقارير التدخّل العلاجيّ — الفوج {group}")
+    cr = data.get("class") or {}
+
+    h = doc.add_paragraph(); _rtl_para(h); h.add_run("التقرير الجماعيّ للقسم").bold = True
+    w = doc.add_paragraph(); _rtl_para(w)
+    w.add_run(f"أضعف مهارةٍ للقسم: {cr.get('weakest') or '—'}")
+    for name, sk in (cr.get("skills") or {}).items():
+        avg = sk.get("avg") if isinstance(sk, dict) else sk
+        p = doc.add_paragraph(f"• {name}: {_pct(round(avg*100,1) if avg is not None else None)}")
+        _rtl_para(p)
+    if cr.get("plan"):
+        pp = doc.add_paragraph(); _rtl_para(pp); pp.add_run("خطّة الدعم:").bold = True
+        body = doc.add_paragraph(str(cr["plan"])); _rtl_para(body)
+
+    for stu in (data.get("students") or []):
+        doc.add_paragraph()
+        h = doc.add_heading(stu["student"].full_name, level=2); _rtl_para(h)
+        for name, sk in (stu.get("skills") or {}).items():
+            avg = sk.get("avg") if isinstance(sk, dict) else sk
+            p = doc.add_paragraph(f"• {name}: {_pct(round(avg*100,1) if avg is not None else None)}")
+            _rtl_para(p)
+        if stu.get("plan"):
+            pp = doc.add_paragraph(); _rtl_para(pp); pp.add_run("خطّة التدخّل:").bold = True
+            body = doc.add_paragraph(str(stu["plan"])); _rtl_para(body)
+        elif not stu.get("has_data"):
+            p = doc.add_paragraph("لا بيانات مصادَقٌ عليها بعد لهذا التلميذ."); _rtl_para(p)
+
+    buf = io.BytesIO(); doc.save(buf); return buf.getvalue()
+
+
+def ai_reports_txt(data: dict) -> str:
+    group = data.get("group", "")
+    cr = data.get("class") or {}
+    lines = [f"تقارير التدخّل العلاجيّ — الفوج {group}", "",
+             "== التقرير الجماعيّ ==",
+             f"أضعف مهارة: {cr.get('weakest') or '—'}"]
+    for name, sk in (cr.get("skills") or {}).items():
+        avg = sk.get("avg") if isinstance(sk, dict) else sk
+        lines.append(f"  • {name}: {_pct(round(avg*100,1) if avg is not None else None)}")
+    if cr.get("plan"):
+        lines += ["خطّة الدعم:", str(cr["plan"])]
+    for stu in (data.get("students") or []):
+        lines += ["", f"== {stu['student'].full_name} =="]
+        for name, sk in (stu.get("skills") or {}).items():
+            avg = sk.get("avg") if isinstance(sk, dict) else sk
+            lines.append(f"  • {name}: {_pct(round(avg*100,1) if avg is not None else None)}")
+        if stu.get("plan"):
+            lines += ["خطّة التدخّل:", str(stu["plan"])]
+    return "\n".join(lines)
+
+
 def class_report_txt(data: dict) -> str:
     group = data.get("group_name", "")
     evals = data.get("evaluations") or []

@@ -1,0 +1,76 @@
+{% extends "admin/base.html" %}
+{% block title %}تقارير التدخّل · PHILO-TECH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
+  <h2 class="h2 m-0">تقارير التدخّل — قراءة وتصدير</h2>
+  <a class="btn btn-outline-secondary" href="/admin/ai">→ التوليد (AI)</a>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center d-print-none">
+  <form method="get" action="/admin/ai/reports" class="d-flex gap-2" style="max-width:22rem">
+    <select name="group" class="form-select" onchange="this.form.submit()">
+      {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g==group }}>{{ g }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn btn-primary">عرض</button></noscript>
+  </form>
+  {% if data and data.class.has_data %}
+    <a class="btn btn-outline-primary" href="/admin/ai/reports/export?group={{ group }}&fmt=docx">⬇ Word</a>
+    <a class="btn btn-outline-secondary" href="/admin/ai/reports/export?group={{ group }}&fmt=txt">⬇ نصّ</a>
+    <button class="btn btn-outline-secondary" onclick="window.print()">🖨️ طباعة</button>
+  {% endif %}
+</div>
+
+{% if not data or not data.class.has_data %}
+  <div class="alert alert-info">لا بيانات مصادَقٌ عليها بعد لهذا الفوج. صحّح تقويماً أوّلاً،
+    أو استورد نقطاً، لتظهر التقارير.</div>
+{% else %}
+  {% if not has_plans %}
+  <div class="alert alert-warning d-print-none">
+    تُعرَض <b>خلاصة المهارات الحتميّة</b> (تعمل بلا Ollama). لإضافة <b>خطط التدخّل الذكيّة</b>
+    (نصّ)، شغّل Ollama ثمّ ولّد التقارير من صفحة «التوليد (AI)».
+  </div>
+  {% endif %}
+
+  <!-- تقرير القسم -->
+  <div class="card mb-3">
+    <div class="card-header"><h3 class="card-title m-0">📊 التقرير الجماعيّ — الفوج {{ group }}</h3></div>
+    <div class="card-body">
+      <p><b>أضعف مهارةٍ للقسم:</b> <span class="badge bg-red">{{ data.class.weakest or '—' }}</span></p>
+      <div class="row">
+        {% for name, sk in data.class.skills.items() %}
+        <div class="col-md-4 mb-1">{{ name }}:
+          <b>{{ (sk.avg * 100)|round(1) if sk.avg is not none else '—' }}{{ '٪' if sk.avg is not none else '' }}</b>
+        </div>
+        {% endfor %}
+      </div>
+      {% if data.class.plan %}
+      <hr><b>خطّة الدعم (AI):</b>
+      <div style="white-space:pre-wrap;line-height:1.9">{{ data.class.plan }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- التقارير الفردية -->
+  <h3 class="h3 mb-2">👤 التقارير الفردية ({{ data.students|length }} تلميذ)</h3>
+  {% for stu in data.students %}
+  <div class="card mb-2"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center">
+      <b>{{ stu.student.full_name }}</b>
+      <a class="btn btn-sm btn-outline-primary d-print-none"
+         href="/admin/gradebook/student/{{ stu.student.id }}/export?fmt=docx">⬇ Word فرديّ</a>
+    </div>
+    {% if stu.has_data %}
+    <div class="row mt-2">
+      {% for name, sk in stu.skills.items() %}
+      <div class="col-md-4" style="font-size:.9rem">{{ name }}:
+        <b>{{ (sk.avg * 100)|round(1) if sk.avg is not none else '—' }}{{ '٪' if sk.avg is not none else '' }}</b></div>
+      {% endfor %}
+    </div>
+    {% if stu.plan %}<div class="mt-2" style="white-space:pre-wrap;line-height:1.8;font-size:.92rem">{{ stu.plan }}</div>{% endif %}
+    {% else %}
+    <div class="text-secondary mt-1">لا بيانات مصادَقٌ عليها بعد.</div>
+    {% endif %}
+  </div></div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

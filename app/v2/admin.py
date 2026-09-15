@@ -793,6 +793,81 @@ async def ai_run(request: Request, group_name: str = Form(...),
     return await render(job_group=group_name)
 
 
+async def _ai_reports_data(s, group: str) -> dict:
+    """يجمع تقارير التدخّل للقراءة/التصدير: تحليل المهارات الحتميّ للقسم وكلّ تلميذ
+    (يعمل بلا Ollama)، مع خطط الذكاء المخزّنة إن وُلِّدت سابقاً."""
+    class_rep = await generate_class_report(s, group)
+    class_plan = await s.scalar(
+        select(ClassReport.ai_intervention_plan)
+        .where(ClassReport.group_name == group,
+               ClassReport.ai_intervention_plan.is_not(None))
+        .order_by(ClassReport.created_at.desc()).limit(1))
+    students = (await s.execute(
+        select(Student).where(Student.group_name == group, Student.active.is_(True))
+        .order_by(Student.full_name))).scalars().all()
+    stu = []
+    for st in students:
+        prof = await generate_student_skill_profile(s, st.id)
+        plan = await s.scalar(
+            select(StudentReport.ai_intervention_plan)
+            .where(StudentReport.student_id == st.id,
+                   StudentReport.ai_intervention_plan.is_not(None))
+            .order_by(StudentReport.created_at.desc()).limit(1))
+        stu.append({"student": st, "skills": prof.get("skills") or {},
+                    "has_data": prof.get("has_data"), "plan": plan})
+    return {
+        "group": group,
+        "class": {"skills": class_rep.get("skills") or {},
+                  "weakest": class_rep.get("dominant_deficit"),
+                  "plan": class_plan, "has_data": class_rep.get("has_data")},
+        "students": stu,
+    }
+
+
+@router.get("/ai/reports", response_class=HTMLResponse)
+async def ai_reports_view(request: Request):
+    """يعرض تقارير التدخّل (جماعيّة + فرديّة) للقسم للقراءة على الشاشة."""
+    if (g := require_admin(request)):
+        return g
+    group = request.query_params.get("group") or ""
+    async with AsyncSessionLocal() as s:
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
+        if not group and groups:
+            group = groups[0]
+        data = await _ai_reports_data(s, group) if group else None
+    return templates.TemplateResponse(
+        "admin/ai_reports.html",
+        _ctx(request, groups=groups, group=group, data=data,
+             has_plans=bool(data and (data["class"]["plan"] or
+                            any(x["plan"] for x in data["students"]))) if data else False))
+
+
+@router.get("/ai/reports/export")
+async def ai_reports_export(request: Request):
+    """تصدير تقارير التدخّل للقسم إلى Word (fmt=docx، الافتراض) أو نصّ (fmt=txt)."""
+    if (g := require_admin(request)):
+        return g
+    group = request.query_params.get("group") or ""
+    fmt = (request.query_params.get("fmt") or "docx").lower()
+    if not group:
+        return RedirectResponse("/admin/ai/reports", status_code=303)
+    async with AsyncSessionLocal() as s:
+        data = await _ai_reports_data(s, group)
+    if fmt == "txt":
+        from ..services.report_export import ai_reports_txt
+        return Response(
+            content=ai_reports_txt(data).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="ai-{group}.txt"'})
+    from ..services.report_export import ai_reports_docx
+    return Response(
+        content=ai_reports_docx(data),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="ai-{group}.docx"'})
+
+
 @router.get("/ai/status", response_class=HTMLResponse)
 async def ai_status(request: Request):
     """جزء HTMX: يعرض تقدّم مهمّة الذكاء الاصطناعي، ويتوقّف عن الاستطلاع عند الانتهاء."""

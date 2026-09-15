@@ -1,7 +1,10 @@
 {% extends "admin/base.html" %}
 {% block title %}التدخّل العلاجي (AI) · PHILO-TECH{% endblock %}
 {% block content %}
-<h2 class="h2 mb-3">توليد تقارير التدخّل العلاجي (AI)</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h2 m-0">توليد تقارير التدخّل العلاجي (AI)</h2>
+  <a class="btn btn-primary" href="/admin/ai/reports">📖 قراءة التقارير وتصديرها Word</a>
+</div>
 
 <div class="alert {{ 'alert-success' if online else 'alert-warning' }}">
   المحرك المحلّي (Ollama):
