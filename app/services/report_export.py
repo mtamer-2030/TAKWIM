@@ -152,6 +152,8 @@ def ai_reports_docx(data: dict) -> bytes:
     doc = _new_doc(f"تقرير التدخّل العلاجيّ — الفوج {group}")
 
     _bold_para(doc, "أوّلاً: التقرير الجماعيّ للقسم")
+    if cr.get("narrative"):
+        n = doc.add_paragraph(str(cr["narrative"])); _rtl_para(n)
     meta = doc.add_paragraph(); _rtl_para(meta)
     meta.add_run(
         f"المعدّل العامّ للقسم: {_pct(cp.get('overall_pct'))}  |  "
@@ -176,6 +178,12 @@ def ai_reports_docx(data: dict) -> bytes:
     _bold_para(doc, "توزيع مستويات التلاميذ")
     p = doc.add_paragraph("  ·  ".join(f"{k}: {v}" for k, v in dist.items())); _rtl_para(p)
 
+    if cr.get("hardest"):
+        _bold_para(doc, "أصعب الأسئلة على القسم (الأخطاء الشائعة)")
+        for q in cr["hardest"]:
+            p = doc.add_paragraph(f"• [{q.get('success')}٪] {q.get('prompt','')}")
+            _rtl_para(p)
+
     _bold_para(doc, "توصيات الدعم البيداغوجيّ")
     for r in (cp.get("recommendations") or []):
         p = doc.add_paragraph(); _rtl_para(p)
@@ -193,6 +201,8 @@ def ai_reports_docx(data: dict) -> bytes:
         if not stu.get("has_data"):
             p = doc.add_paragraph("لا بيانات مصادَقٌ عليها بعد لهذا التلميذ."); _rtl_para(p)
             continue
+        if stu.get("narrative"):
+            nn = doc.add_paragraph(str(stu["narrative"])); _rtl_para(nn)
         m = doc.add_paragraph(); _rtl_para(m)
         m.add_run(f"المعدّل: {_pct(sp.get('overall_pct'))} ({sp.get('overall_band','—')})  |  "
                   f"القوّة: {sp.get('strongest') or '—'}  |  القصور: {sp.get('weakest') or '—'}")
@@ -216,8 +226,10 @@ def ai_reports_txt(data: dict) -> str:
     cr = data.get("class") or {}
     cp = cr.get("peda") or {}
     lines = [f"تقرير التدخّل العلاجيّ — الفوج {group}", "",
-             "═══ أوّلاً: التقرير الجماعيّ ═══",
-             f"المعدّل العامّ للقسم: {_pct(cp.get('overall_pct'))}",
+             "═══ أوّلاً: التقرير الجماعيّ ═══"]
+    if cr.get("narrative"):
+        lines += [str(cr["narrative"]), ""]
+    lines += [f"المعدّل العامّ للقسم: {_pct(cp.get('overall_pct'))}",
              f"تلاميذ لهم بيانات: {cp.get('students_with_data',0)}/{cp.get('student_count',0)}",
              f"أقوى كفاية: {cp.get('strongest') or '—'} | أضعف كفاية: {cp.get('weakest') or '—'}"]
     if cp.get("dominant_deficit"):
@@ -228,6 +240,10 @@ def ai_reports_txt(data: dict) -> str:
         lines.append(f"  • {d['name']}: {_pct(d.get('pct'))} — {d.get('band','—')}")
     dist = cp.get("distribution") or {}
     lines.append("توزيع المستويات: " + " · ".join(f"{k}: {v}" for k, v in dist.items()))
+    if cr.get("hardest"):
+        lines.append("\nأصعب الأسئلة (الأخطاء الشائعة):")
+        for q in cr["hardest"]:
+            lines.append(f"  • [{q.get('success')}٪] {q.get('prompt','')}")
     lines.append("\nتوصيات الدعم:")
     for r in (cp.get("recommendations") or []):
         lines.append(f"  • {r['skill']}: {r.get('advice','')}")

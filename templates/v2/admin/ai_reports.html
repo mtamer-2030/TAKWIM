@@ -45,6 +45,10 @@
   <div class="card mb-3">
     <div class="card-header"><h3 class="card-title m-0">📊 التقرير الجماعيّ — الفوج {{ group }}</h3></div>
     <div class="card-body">
+      {% if data.class.narrative %}
+      <div class="alert alert-light" style="line-height:1.9;border-inline-start:4px solid #12489e">
+        {{ data.class.narrative }}</div>
+      {% endif %}
       {% if cp.dominant_deficit %}
       <p><b>القصور المنهجيّ المهيمن:</b> <span class="badge bg-red">{{ cp.dominant_deficit }}</span>
         {% if cp.dominant_share_pct %}<span class="text-secondary">— هو أضعف كفايةٍ لدى {{ cp.dominant_share_pct }}٪ من التلاميذ</span>{% endif %}</p>
@@ -55,13 +59,28 @@
         <thead><tr><th>الكفاية</th><th>النسبة</th><th>التقدير</th><th>عدد الأجوبة</th></tr></thead>
         <tbody>
         {% for d in cp.detail %}
-          <tr><td>{{ d.name }}</td>
+          <tr>
+              <td>{{ d.name }}{% if d.pct is none %} <span class="text-secondary" style="font-size:.8rem">(لا أسئلة تقيسها في هذه التقاويم)</span>{% endif %}</td>
               <td><b>{{ d.pct if d.pct is not none else '—' }}{{ '٪' if d.pct is not none else '' }}</b></td>
               <td><span class="badge" style="background:{{ d.color }}">{{ d.band }}</span></td>
-              <td class="text-secondary">{{ d.count if d.count is not none else '—' }}</td></tr>
+              <td class="text-secondary">{{ d.count if d.count is not none else 0 }}</td></tr>
         {% endfor %}
         </tbody>
       </table></div>
+
+      {% if data.class.hardest %}
+      <h4 class="mt-3">أصعب الأسئلة على القسم (الأخطاء الشائعة)</h4>
+      <div class="table-responsive"><table class="table table-sm">
+        <thead><tr><th>السؤال</th><th>نسبة النجاح</th><th>عدد المجيبين</th></tr></thead>
+        <tbody>
+        {% for q in data.class.hardest %}
+          <tr><td style="font-size:.9rem">{{ q.prompt }}</td>
+              <td><b style="color:{{ '#c62828' if q.success < 40 else '#f9a825' }}">{{ q.success }}٪</b></td>
+              <td class="text-secondary">{{ q.count }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
 
       <h4 class="mt-3">توزيع مستويات التلاميذ</h4>
       <div class="d-flex flex-wrap gap-2">
@@ -85,24 +104,20 @@
   </div>
 
   <!-- التقارير الفردية -->
-  <h3 class="h3 mb-2">👤 التقارير الفردية ({{ data.students|length }} تلميذ)</h3>
-  {% for stu in data.students %}
+  {% set with_data = data.students | selectattr('has_data') | list %}
+  {% set no_data = data.students | rejectattr('has_data') | list %}
+  <h3 class="h3 mb-2">👤 التقارير الفردية — {{ with_data|length }} تلميذاً لهم بيانات</h3>
+  {% for stu in with_data %}
   {% set sp = stu.peda %}
   <div class="card mb-2"><div class="card-body">
     <div class="d-flex justify-content-between align-items-center flex-wrap">
       <div><b>{{ stu.student.full_name }}</b>
-        {% if stu.has_data %}
         <span class="text-secondary">— المعدّل: <b>{{ sp.overall_pct if sp.overall_pct is not none else '—' }}{{ '٪' if sp.overall_pct is not none else '' }}</b> ({{ sp.overall_band }})</span>
-        {% endif %}
       </div>
       <a class="btn btn-sm btn-outline-primary d-print-none"
          href="/admin/gradebook/student/{{ stu.student.id }}/export?fmt=docx">⬇ Word فرديّ</a>
     </div>
-    {% if stu.has_data %}
-    <div class="mt-2" style="font-size:.9rem">
-      <span style="color:#2e7d32">القوّة: <b>{{ sp.strongest or '—' }}</b></span> ·
-      <span style="color:#c62828">القصور: <b>{{ sp.weakest or '—' }}</b></span>
-    </div>
+    {% if stu.narrative %}<div class="mt-1" style="line-height:1.8;font-size:.92rem">{{ stu.narrative }}</div>{% endif %}
     <div class="row mt-1">
       {% for d in sp.detail %}
       <div class="col-md-4" style="font-size:.88rem">{{ d.name }}:
@@ -114,10 +129,14 @@
       <div class="mt-1" style="font-size:.88rem"><b style="color:#12489e">توصية — {{ r.skill }}:</b> {{ r.advice }}</div>
     {% endfor %}
     {% if stu.plan %}<div class="mt-2" style="white-space:pre-wrap;line-height:1.8;font-size:.9rem"><b>خطّة ذكيّة:</b> {{ stu.plan }}</div>{% endif %}
-    {% else %}
-    <div class="text-secondary mt-1">لا بيانات مصادَقٌ عليها بعد.</div>
-    {% endif %}
   </div></div>
   {% endfor %}
+
+  {% if no_data %}
+  <div class="card mb-2"><div class="card-body">
+    <b>لم يُنجزوا التقويم بعد ({{ no_data|length }} تلميذ):</b>
+    <span class="text-secondary">{{ no_data | map(attribute='student') | map(attribute='full_name') | join('، ') }}</span>
+  </div></div>
+  {% endif %}
 {% endif %}
 {% endblock %}

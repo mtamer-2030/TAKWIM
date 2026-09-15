@@ -1,7 +1,8 @@
 """القراءة البيداغوجيّة الحتميّة للتقارير: تصنيف نوعيّ، توزيع مستويات، قوّة/قصور،
 وتوصيات دعمٍ عمليّة — جماعيّاً وفرديّاً (بلا Ollama)."""
 
-from app.services.pedagogy import (band, class_pedagogy, student_pedagogy,
+from app.services.pedagogy import (band, class_narrative, class_pedagogy,
+                                   student_narrative, student_pedagogy,
                                    SKILL_REMEDIATION)
 
 
@@ -47,3 +48,17 @@ def test_empty_class_pedagogy_no_crash():
     cp = class_pedagogy({"skills": {}, "overall": None}, [])
     assert cp["strongest"] is None and cp["weakest"] is None
     assert cp["recommendations"] == []
+
+
+def test_narratives_are_readable():
+    cr = {"skills": {"صياغة الإشكال": {"avg": 0.9, "count": 3},
+                     "التركيب": {"avg": 0.3, "count": 3}},
+          "overall": 0.6, "dominant_deficit": "التركيب", "dominant_share": 0.5,
+          "student_count": 20, "students_with_data": 12}
+    cp = class_pedagogy(cr, [0.9, 0.6, 0.3])
+    text = class_narrative(cp, "TC1")
+    assert "TC1" in text and "12" in text and "التركيب" in text and "يُوصى" in text
+    sp = student_pedagogy({"skills": {"صياغة الإشكال": {"avg": 0.9}},
+                           "overall": 0.7})
+    st = student_narrative(sp, "أمين")
+    assert "أمين" in st and "70.0٪" in st

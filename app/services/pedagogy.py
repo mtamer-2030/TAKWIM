@@ -101,6 +101,49 @@ def class_pedagogy(class_rep: dict, student_overalls: list[float | None]) -> dic
     }
 
 
+def class_narrative(cp: dict, group: str) -> str:
+    """خلاصةٌ سرديّة قرائيّة للتقرير الجماعيّ — تُنتَج حتميّاً (بلا Ollama)."""
+    parts = []
+    swd, sc = cp.get("students_with_data", 0), cp.get("student_count", 0)
+    ov = cp.get("overall_pct")
+    ov_band = band((ov / 100) if ov is not None else None)[0]
+    parts.append(
+        f"أنجز تقويمَ الفوج {group} {swd} تلميذاً من أصل {sc}. "
+        + (f"بلغ المعدّل العامّ للقسم {ov}٪ (تقدير عامّ: {ov_band}). " if ov is not None else ""))
+    if cp.get("strongest") or cp.get("weakest"):
+        parts.append(
+            f"أقوى الكفايات لدى القسم «{cp.get('strongest') or '—'}»، "
+            f"وأضعفها «{cp.get('weakest') or '—'}». ")
+    dist = cp.get("distribution") or {}
+    nonzero = [f"{v} {k}" for k, v in dist.items() if v]
+    if nonzero:
+        parts.append("يتوزّع التلاميذ إلى: " + "، ".join(nonzero) + ". ")
+    if cp.get("dominant_deficit"):
+        share = cp.get("dominant_share_pct")
+        parts.append(
+            f"القصور المنهجيّ المهيمن هو «{cp['dominant_deficit']}»"
+            + (f"، وهو أضعف كفايةٍ لدى {share}٪ من التلاميذ. " if share else ". "))
+    recs = [r["skill"] for r in (cp.get("recommendations") or [])]
+    if recs:
+        parts.append("يُوصى بتركيز الدعم البيداغوجيّ على: " + "، ".join(recs) + ".")
+    return "".join(parts)
+
+
+def student_narrative(sp: dict, name: str) -> str:
+    """خلاصةٌ سرديّة قرائيّة لتقرير تلميذ."""
+    ov = sp.get("overall_pct")
+    ov_band = sp.get("overall_band", "—")
+    s = (f"بلغ معدّل التلميذ {name} {ov}٪ (تقدير: {ov_band}). " if ov is not None
+         else f"لم تُصادَق بعدُ نتائجُ التلميذ {name}. ")
+    if sp.get("strongest") or sp.get("weakest"):
+        s += (f"تبرز قوّته في «{sp.get('strongest') or '—'}»، "
+              f"ويظهر قصورٌ في «{sp.get('weakest') or '—'}». ")
+    recs = [r["skill"] for r in (sp.get("recommendations") or [])]
+    if recs:
+        s += "يُنصح بتمارين دعمٍ في: " + "، ".join(recs) + "."
+    return s
+
+
 def student_pedagogy(profile: dict) -> dict:
     """قراءةٌ بيداغوجيّة فرديّة: تصنيف نوعيّ لكلّ مهارة، معدّلٌ عامّ ووصفه، نقطة القوّة،
     القصور الحرج، وتوصية دعمٍ شخصيّة لأضعف مهارتين."""

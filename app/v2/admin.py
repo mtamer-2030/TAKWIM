@@ -793,11 +793,29 @@ async def ai_run(request: Request, group_name: str = Form(...),
     return await render(job_group=group_name)
 
 
+async def _hardest_questions(s, group: str, limit: int = 6) -> list[dict]:
+    """أصعب الأسئلة على القسم (الأخطاء الشائعة): نسبة نجاحٍ منخفضة عبر أجوبةٍ مصادَقة."""
+    eff = func.coalesce(Answer.manual_score, Answer.auto_score)
+    ratio = func.avg(eff / QuizQuestion.max_score)
+    rows = (await s.execute(
+        select(QuizQuestion.prompt, ratio, func.count(Answer.id))
+        .join(Answer, Answer.quiz_question_id == QuizQuestion.id)
+        .join(Student, Student.id == Answer.student_id)
+        .where(Student.group_name == group, Answer.teacher_confirmed.is_(True),
+               eff.is_not(None), QuizQuestion.max_score > 0)
+        .group_by(QuizQuestion.id)
+        .having(func.count(Answer.id) >= 2)
+        .order_by(ratio.asc()).limit(limit))).all()
+    return [{"prompt": (p or "").strip()[:100], "success": round((r or 0) * 100, 1),
+             "count": n} for p, r, n in rows if (r or 0) < 0.7]
+
+
 async def _ai_reports_data(s, group: str) -> dict:
     """يجمع تقارير التدخّل للقراءة/التصدير مع قراءةٍ بيداغوجيّة كاملة (بلا Ollama):
-    تصنيف نوعيّ للمهارات، توزيع مستويات القسم، نقاط القوّة/القصور، وتوصيات دعمٍ عمليّة —
-    جماعيّاً وفرديّاً؛ مع خطط الذكاء المخزّنة إن وُلِّدت سابقاً."""
-    from ..services.pedagogy import class_pedagogy, student_pedagogy
+    خلاصةٌ سرديّة، تصنيف نوعيّ للمهارات، توزيع المستويات، القوّة/القصور، أصعب الأسئلة،
+    وتوصيات دعمٍ عمليّة — جماعيّاً وفرديّاً؛ مع خطط الذكاء المخزّنة إن وُلِّدت."""
+    from ..services.pedagogy import (class_narrative, class_pedagogy,
+                                     student_narrative, student_pedagogy)
     class_rep = await generate_class_report(s, group)
     class_plan = await s.scalar(
         select(ClassReport.ai_intervention_plan)
@@ -817,15 +835,19 @@ async def _ai_reports_data(s, group: str) -> dict:
             .where(StudentReport.student_id == st.id,
                    StudentReport.ai_intervention_plan.is_not(None))
             .order_by(StudentReport.created_at.desc()).limit(1))
+        sp = student_pedagogy(prof)
         stu.append({"student": st, "skills": prof.get("skills") or {},
                     "has_data": prof.get("has_data"), "plan": plan,
-                    "peda": student_pedagogy(prof)})
+                    "peda": sp, "narrative": student_narrative(sp, st.full_name)})
+    cp = class_pedagogy(class_rep, overalls)
+    hardest = await _hardest_questions(s, group)
     return {
         "group": group,
         "class": {"skills": class_rep.get("skills") or {},
                   "weakest": class_rep.get("dominant_deficit"),
                   "plan": class_plan, "has_data": class_rep.get("has_data"),
-                  "peda": class_pedagogy(class_rep, overalls)},
+                  "peda": cp, "narrative": class_narrative(cp, group),
+                  "hardest": hardest},
         "students": stu,
     }
 
@@ -841,7 +863,16 @@ async def ai_reports_view(request: Request):
             select(Student.group_name).where(Student.group_name.is_not(None))
             .distinct().order_by(Student.group_name))).all()]
         if not group and groups:
-            group = groups[0]
+            # الافتراض: الفوج الأكثر بياناتٍ مصادَقة (لا فوجاً فارغاً) — تقريرٌ ذو معنى فوراً.
+            eff = func.coalesce(Answer.manual_score, Answer.auto_score)
+            top = (await s.execute(
+                select(Student.group_name, func.count(Answer.id).label("n"))
+                .join(Answer, Answer.student_id == Student.id)
+                .where(Answer.teacher_confirmed.is_(True), eff.is_not(None),
+                       Student.group_name.is_not(None))
+                .group_by(Student.group_name).order_by(func.count(Answer.id).desc())
+                .limit(1))).first()
+            group = top[0] if top else groups[0]
         data = await _ai_reports_data(s, group) if group else None
     return templates.TemplateResponse(
         "admin/ai_reports.html",
