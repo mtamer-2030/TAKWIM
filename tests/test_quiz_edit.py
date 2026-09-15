@@ -90,3 +90,11 @@ def test_opts_text_handles_nonstring_and_none_payload():
     assert _opts_text(q1) == "* أ\nب\n* 3"          # الرقم 3 حُوِّل نصّاً بلا انهيار
     q2 = QuizQuestion(qtype="passage", prompt="نصّ", position=1, max_score=0, payload=None)
     assert _opts_text(q2) == ""                       # payload=None لا يكسر
+    # correct مخزَّنٌ رقماً مفرداً (لا قائمة) — كان يُسقِط المحرّر بـ TypeError
+    q3 = QuizQuestion(qtype="mcq_single", prompt="س", position=2, max_score=1,
+                      payload={"options": ["أ", "ب", "ج"], "correct": 1})
+    assert _opts_text(q3) == "أ\n* ب\nج"
+    # correct قائمة عاديّة تبقى تعمل
+    q4 = QuizQuestion(qtype="mcq_multi", prompt="س", position=3, max_score=2,
+                      payload={"options": ["أ", "ب"], "correct": [0, 1]})
+    assert _opts_text(q4) == "* أ\n* ب"

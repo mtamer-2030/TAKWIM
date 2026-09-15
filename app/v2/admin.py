@@ -1168,12 +1168,26 @@ async def quiz_assign(request: Request, quiz_id: int, level_id: str = Form(""),
     return RedirectResponse("/admin/quizzes", status_code=303)
 
 
+def _correct_set(value) -> set:
+    """يطبّع فهارس الأجوبة الصحيحة إلى مجموعة، مهما كان تخزينها: قائمة، رقمٌ مفرد
+    (بعض التقويمات تخزّن correct=2 لا [2])، أو غياب."""
+    if isinstance(value, bool):
+        return set()
+    if isinstance(value, int):
+        return {value}
+    if isinstance(value, (list, tuple, set)):
+        return {v for v in value if isinstance(v, int) and not isinstance(v, bool)}
+    return set()
+
+
 def _opts_text(q: QuizQuestion) -> str:
     """يبني نصّ الخيارات للمحرّر: سطرٌ لكلّ خيار، والصحيح مسبوقٌ بنجمة (*).
-    يحوّل كلّ خيارٍ إلى نصّ (بعض التقويمات المستورَدة تحمل خياراتٍ رقميّة)."""
+    متسامحٌ مع بنياتٍ مختلفة (خيارات رقميّة، correct رقمٌ مفرد، payload غير قاموسيّ)."""
     payload = q.payload if isinstance(q.payload, dict) else {}
-    options = payload.get("options") or []
-    correct = set(payload.get("correct") or [])
+    options = payload.get("options")
+    if not isinstance(options, (list, tuple)):
+        options = []
+    correct = _correct_set(payload.get("correct"))
     lines = []
     for i, o in enumerate(options):
         text = str(o)
