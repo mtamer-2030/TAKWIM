@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
 
 from .normalize import normalize
@@ -310,6 +311,28 @@ class RosterImport:
     rows: list[StudentRow] = field(default_factory=list)
 
 
+# رمز مسار: حرف أو حرفان ثمّ ٦–١٠ أرقام (مثل C171023826). لا يطابق roster_id مثل TC3-01.
+_MASSAR_RE = re.compile(r"^[A-Za-z]{1,2}\d{6,10}$")
+
+
+def _detect_massar_column(df, used_cols: set[str]) -> str | None:
+    """يكتشف عمود رمز مسار **بمحتواه** حين لا يُطابَق بالعنوان — فتُستورَد لوائح الإدارة
+    (التي تسمّي العمود roster_id مثلاً) مباشرةً بلا إعادة تسمية. يختار العمود الذي أغلب
+    قيمه على شكل رمز مسار، ولا يمسّ الأعمدة المطابَقة سلفاً (كالاسم)."""
+    best, best_ratio = None, 0.0
+    for col in df.columns:
+        if col in used_cols:
+            continue
+        vals = [str(v).strip() for v in df[col]
+                if v is not None and str(v).strip() and str(v).strip().lower() != "nan"]
+        if not vals:
+            continue
+        ratio = sum(1 for v in vals if _MASSAR_RE.match(v)) / len(vals)
+        if ratio >= 0.6 and ratio > best_ratio:
+            best, best_ratio = col, ratio
+    return best
+
+
 def _match_columns(headers: list[str]) -> dict[str, str]:
     """يربط الأعمدة المكتشفة بالحقول المعروفة (بالتطبيع العربي)."""
     norm_headers = {h: normalize(str(h)) for h in headers}
@@ -348,6 +371,12 @@ def parse_students_excel(data: bytes) -> RosterImport:
             + "، ".join(_COLS["full_name"][:4])
         )
         return result
+    # إن لم يُطابَق عمود رمز مسار بالعنوان، نكتشفه بالمحتوى (لوائح الإدارة تسمّيه
+    # roster_id مثلاً) — فتُستورَد مباشرةً وتُطابَق التلاميذُ بلا إعادة تسمية.
+    if "massar" not in cols:
+        detected = _detect_massar_column(df, set(cols.values()))
+        if detected:
+            cols["massar"] = detected
 
     for idx, raw in df.iterrows():
         line = int(idx) + 2  # الصفّ 1 ترويسة
