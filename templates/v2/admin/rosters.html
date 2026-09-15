@@ -8,6 +8,43 @@
 {% if added is not none %}
 <div class="alert alert-success">تمّ الحفظ: أُضيف {{ added }}، حُدِّث {{ updated }}.</div>
 {% endif %}
+{% if new_code %}
+<div class="alert alert-success">
+  أُضيف <b>{{ new_name }}</b>. رمز دخوله المختصر:
+  <code dir="ltr" style="font-size:1.1rem">{{ new_code }}</code> — يلج به أو برمز مسار.
+</div>
+{% endif %}
+{% if add_error %}<div class="alert alert-danger">{{ add_error }}</div>{% endif %}
+
+<div class="card mb-3"><div class="card-body">
+  <h3 class="card-title">➕ إضافة تلميذ جديد (مُحوَّل / غير مسجَّل)</h3>
+  <p class="text-secondary">يُولَّد له رمز دخولٍ مختصر تلقائيّاً، فيلج برمز مسار أو به.</p>
+  <form method="post" action="/admin/students/add" class="row g-2">
+    <div class="col-md-4">
+      <label class="form-label">الاسم الكامل</label>
+      <input name="full_name" class="form-control" required placeholder="الاسم والنسب">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">المستوى</label>
+      <select name="level_id" class="form-select" required>
+        <option value="">— اختر —</option>
+        {% for lv in level_objs %}<option value="{{ lv.id }}">{{ lv.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">الفوج</label>
+      <input name="group_name" class="form-control" list="grp" placeholder="مثل TC3">
+      <datalist id="grp">{% for g in groups %}<option value="{{ g }}">{% endfor %}</datalist>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">رمز مسار (اختياري)</label>
+      <input name="massar_code" class="form-control" placeholder="D…">
+    </div>
+    <div class="col-md-1 d-flex align-items-end">
+      <button class="btn btn-primary w-100">إضافة</button>
+    </div>
+  </form>
+</div></div>
 <input type="search" id="rosterSearch" class="form-control mb-2" style="max-width:26rem"
        placeholder="بحث بالاسم أو رمز مسار أو القسم…" autocomplete="off">
 <div class="card"><div class="table-responsive">

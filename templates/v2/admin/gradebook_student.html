@@ -4,6 +4,8 @@
 <div class="d-flex justify-content-between align-items-center mb-3 d-print-none">
   <h2 class="h2 m-0">التقرير التراكميّ — {{ data.student.full_name }}</h2>
   <div>
+    <a class="btn btn-outline-primary" href="/admin/gradebook/student/{{ data.student.id }}/export?fmt=docx">⬇ Word</a>
+    <a class="btn btn-outline-secondary" href="/admin/gradebook/student/{{ data.student.id }}/export?fmt=txt">⬇ نصّ</a>
     <button class="btn btn-outline-secondary" onclick="window.print()">🖨️ طباعة</button>
     <a class="btn btn-outline-secondary" href="/admin/gradebook?group={{ data.student.group_name or '' }}">→ الفوج</a>
   </div>

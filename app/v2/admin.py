@@ -517,13 +517,56 @@ async def rosters(request: Request):
         students = (await s.execute(
             select(Student).order_by(Student.level_id, Student.group_name,
                                      Student.full_name))).scalars().all()
-        levels = {lv.id: lv.name for lv in
-                  (await s.execute(select(Level))).scalars().all()}
+        level_objs = (await s.execute(select(Level).order_by(Level.position))).scalars().all()
+        levels = {lv.id: lv.name for lv in level_objs}
+        groups = [r[0] for r in (await s.execute(
+            select(Student.group_name).where(Student.group_name.is_not(None))
+            .distinct().order_by(Student.group_name))).all()]
     return templates.TemplateResponse(
         "admin/rosters.html",
-        _ctx(request, students=students, levels=levels,
+        _ctx(request, students=students, levels=levels, level_objs=level_objs,
+             groups=groups,
              added=request.query_params.get("added"),
-             updated=request.query_params.get("updated")))
+             updated=request.query_params.get("updated"),
+             new_code=request.query_params.get("new_code"),
+             new_name=request.query_params.get("new_name"),
+             add_error=request.query_params.get("add_error")))
+
+
+@router.post("/students/add")
+async def student_add(request: Request, full_name: str = Form(...),
+                      level_id: str = Form(...), group_name: str = Form(""),
+                      massar_code: str = Form("")):
+    """إضافة تلميذٍ جديد غير مسجَّل (مثلاً حُوِّل من الإدارة) مع توليد رمز دخوله القصير
+    تلقائيّاً — فيلج برمز مسار أو برمزه المختصر مثل بقيّة المتعلّمين."""
+    if (g := require_admin(request)):
+        return g
+    name = full_name.strip()
+    group = group_name.strip() or None
+    massar = massar_code.strip().upper() or None
+    if not name or not str(level_id).strip().isdigit():
+        return RedirectResponse(
+            "/admin/rosters?add_error=" + quote("الاسم والمستوى مطلوبان."), status_code=303)
+    async with AsyncSessionLocal() as s:
+        level = await s.get(Level, int(level_id))
+        if level is None:
+            return RedirectResponse(
+                "/admin/rosters?add_error=" + quote("المستوى غير موجود."), status_code=303)
+        if massar and await s.scalar(select(Student).where(Student.massar_code == massar)):
+            return RedirectResponse(
+                "/admin/rosters?add_error=" + quote(f"رمز مسار «{massar}» مسجَّلٌ سلفاً."),
+                status_code=303)
+        existing_codes = set((await s.execute(
+            select(Student.login_code).where(Student.login_code.is_not(None)))).scalars().all())
+        n = (await s.scalar(select(func.count()).select_from(Student)
+                            .where(Student.group_name == group))) or 0
+        label = _class_label(group, level)
+        code = make_login_code(f"{label}-{n + 1:02d}", existing_codes.__contains__)
+        s.add(Student(full_name=name, level_id=level.id, group_name=group,
+                      massar_code=massar, login_code=code, active=True))
+        await s.commit()
+    return RedirectResponse(
+        f"/admin/rosters?new_code={quote(code)}&new_name={quote(name)}", status_code=303)
 
 
 # ═══════════════ التدخّل العلاجي (الذكاء الاصطناعي المحلّي) ═══════════════
@@ -1901,6 +1944,19 @@ async def gradebook_export(request: Request):
         return RedirectResponse(
             f"/admin/gradebook?group={group}&error=لا بيانات للتصدير.", status_code=303)
 
+    if fmt == "docx":
+        from ..services.report_export import class_report_docx
+        return Response(
+            content=class_report_docx(data),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="report-{group}.docx"'})
+    if fmt == "txt":
+        from ..services.report_export import class_report_txt
+        return Response(
+            content=class_report_txt(data).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="report-{group}.txt"'})
+
     import io
     import pandas as pd
 
@@ -1958,3 +2014,27 @@ async def gradebook_student(request: Request, student_id: int):
     return templates.TemplateResponse(
         "admin/gradebook_student.html",
         _ctx(request, data=data, chart=_json.dumps(chart), radar=_json.dumps(radar)))
+
+
+@router.get("/gradebook/student/{student_id}/export")
+async def gradebook_student_export(request: Request, student_id: int):
+    """تصدير التقرير الفرديّ للتلميذ إلى Word (fmt=docx، الافتراض) أو نصّ (fmt=txt)."""
+    if (g := require_admin(request)):
+        return g
+    fmt = (request.query_params.get("fmt") or "docx").lower()
+    async with AsyncSessionLocal() as s:
+        data = await student_gradebook(s, student_id)
+    if data["student"] is None:
+        return HTMLResponse("التلميذ غير موجود", status_code=404)
+    name = data["student"].full_name
+    if fmt == "txt":
+        from ..services.report_export import student_report_txt
+        return Response(
+            content=student_report_txt(data).encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="student-{student_id}.txt"'})
+    from ..services.report_export import student_report_docx
+    return Response(
+        content=student_report_docx(data),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="student-{student_id}.docx"'})

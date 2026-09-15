@@ -11,7 +11,9 @@
     <noscript><button class="btn btn-primary">عرض</button></noscript>
   </form>
   {% if data and data.has_data %}
-    <a class="btn btn-outline-success" href="/admin/gradebook/export?group={{ selected }}&fmt=xlsx">⬇ تصدير Excel</a>
+    <a class="btn btn-outline-primary" href="/admin/gradebook/export?group={{ selected }}&fmt=docx">⬇ Word</a>
+    <a class="btn btn-outline-success" href="/admin/gradebook/export?group={{ selected }}&fmt=xlsx">⬇ Excel</a>
+    <a class="btn btn-outline-secondary" href="/admin/gradebook/export?group={{ selected }}&fmt=txt">⬇ نصّ</a>
     <a class="btn btn-outline-secondary" href="/admin/gradebook/export?group={{ selected }}&fmt=csv">⬇ CSV</a>
   {% endif %}
 </div>
