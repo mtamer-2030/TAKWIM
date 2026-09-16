@@ -114,7 +114,7 @@ def test_student_report_docx_and_txt():
 
 
 def test_student_export_route_returns_docx(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import reports as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
