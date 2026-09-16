@@ -38,7 +38,7 @@ def test_ai_reports_export_functions():
 
 
 def test_ai_reports_view_route_builds_data(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import ai as admin_mod
     cap = {}
 
     async def go():
