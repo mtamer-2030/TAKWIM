@@ -53,7 +53,7 @@ def test_parse_marks_missing_column_reports_error():
 
 
 def test_marks_import_creates_confirmed_scores(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import marks as admin_mod
     cap = {}
 
     async def go():
@@ -97,7 +97,7 @@ def test_marks_import_creates_confirmed_scores(monkeypatch):
 
 
 def test_marks_import_bad_file_shows_error(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import marks as admin_mod
     cap = {}
 
     async def go():
