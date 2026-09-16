@@ -15,7 +15,7 @@ def _req():
 
 
 def _run(monkeypatch, quiz_level_code):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import sessions as admin_mod
 
     async def run():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")

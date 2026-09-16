@@ -15,7 +15,7 @@ def _admin_req():
 
 
 def test_live_status_reports_per_student_progress(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import sessions as admin_mod
     cap = {}
 
     async def run():

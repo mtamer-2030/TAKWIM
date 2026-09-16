@@ -123,7 +123,7 @@ def test_marks_import_bad_file_shows_error(monkeypatch):
 
 
 def test_session_delete_purges_participant_answers(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import sessions as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
