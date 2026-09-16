@@ -52,7 +52,7 @@ def test_imported_closed_question_flows_into_reports():
 
 
 def test_imported_open_question_carries_ai_indicators():
-    from app.v2.admin import _to_normalized_question
+    from app.v2.routers.quizzes import _to_normalized_question
     q = {"type": "long_text", "prompt": "حلّل", "max_score": 6,
          "options": [], "correct": [], "competency": "synthesis",
          "elements": ["تحديد الأطروحة", "ذكر حجّة", "الاستنتاج"]}

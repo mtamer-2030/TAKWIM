@@ -14,7 +14,7 @@ def _req():
 
 
 def test_grading_center_lists_pending(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
     captured = {}
 
     async def run():

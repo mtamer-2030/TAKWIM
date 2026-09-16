@@ -24,7 +24,7 @@ class _FormReq:
 
 
 def test_quiz_edit_updates_text_options_and_deletes(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -84,7 +84,7 @@ def test_quiz_edit_updates_text_options_and_deletes(monkeypatch):
 
 def test_opts_text_handles_nonstring_and_none_payload():
     """حصانةٌ ضدّ انهيار «صفحة بيضاء»: خياراتٌ رقميّة أو payload=None في تقويمٍ مستورَد."""
-    from app.v2.admin import _opts_text
+    from app.v2.routers.quizzes import _opts_text
     q1 = QuizQuestion(qtype="mcq_single", prompt="س", position=0, max_score=1,
                       payload={"options": ["أ", "ب", 3], "correct": [0, 2]})
     assert _opts_text(q1) == "* أ\nب\n* 3"          # الرقم 3 حُوِّل نصّاً بلا انهيار

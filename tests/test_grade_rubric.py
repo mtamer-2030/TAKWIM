@@ -24,7 +24,7 @@ class _FormReq:
 
 
 def test_rubric_save_sets_skill_and_indicators(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
     cap = {}
 
     async def run():

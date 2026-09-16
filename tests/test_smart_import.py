@@ -115,7 +115,7 @@ def test_save_heading_passage_persist_skip_excluded(monkeypatch):
 # ————— مسار الاستيراد → مراجعة —————
 
 def _setup(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def prep():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -232,7 +232,7 @@ def test_save_mcq_without_correct_returns_error(monkeypatch):
 
 
 def test_ai_json_maps_to_review_questions():
-    from app.v2.admin import _ai_json_to_questions
+    from app.v2.routers.quizzes import _ai_json_to_questions
     js = ('{"title":"فرض","questions":['
           '{"type":"passage","prompt":"نصّ فلسفيّ طويل"},'
           '{"type":"long_text","prompt":"استخرج الأطروحة","max_score":3},'
@@ -467,7 +467,7 @@ def test_student_quiz_numbers_only_answerable(monkeypatch):
 
 def test_save_open_with_competency_and_elements(monkeypatch):
     """البند ٣: الكفاية → مهارة (للتقارير)، وعناصر الإجابة → مؤشّرات (لتصحيح AI)."""
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def run():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")

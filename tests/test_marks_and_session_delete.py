@@ -165,7 +165,7 @@ def test_session_delete_purges_participant_answers(monkeypatch):
 def test_grading_clear_answers_removes_stuck_answers(monkeypatch):
     """زرّ «حذف الأجوبة» في قائمة التصحيح يمسح كلّ أجوبة تقويمٍ (جلسات مشوّهة) ويُبقي
     أسئلته وأجوبةَ تقويمٍ آخر."""
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")

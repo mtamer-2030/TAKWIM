@@ -23,7 +23,7 @@ class _Req:
 
 
 def _setup(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def build():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -85,7 +85,7 @@ def test_confirm_open_with_score_succeeds(monkeypatch):
 
 def test_answer_not_shown_is_untouched(monkeypatch):
     """جوابٌ سلّمه تلميذ متأخّراً (ليس في shown) لا يُلغى تصديقه عند حفظ الشاشة."""
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import quizzes as admin_mod
 
     async def run():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
