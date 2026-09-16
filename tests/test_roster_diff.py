@@ -43,7 +43,7 @@ def _backup_db_bytes(rows):
 
 
 def test_roster_diff_detects_moved_and_added(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
     cap = {}
 
     async def go():
@@ -80,7 +80,7 @@ def test_roster_diff_detects_moved_and_added(monkeypatch):
 
 
 def test_roster_diff_bad_file_reports_error(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
     cap = {}
 
     async def go():

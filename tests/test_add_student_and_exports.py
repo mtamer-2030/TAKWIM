@@ -21,7 +21,7 @@ def _admin_req(**q):
 
 
 def test_add_student_generates_login_code(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -50,7 +50,7 @@ def test_add_student_generates_login_code(monkeypatch):
 
 
 def test_add_student_rejects_duplicate_massar(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")

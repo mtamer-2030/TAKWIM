@@ -24,7 +24,7 @@ def _run(coro):
 
 
 def test_roster_import_generates_short_login_codes(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
     from app.v2 import student as st_mod
 
     async def go():
@@ -73,7 +73,7 @@ def test_roster_import_generates_short_login_codes(monkeypatch):
 
 def test_reimport_upgrades_old_students_missing_code(monkeypatch):
     """تلميذٌ قديمٌ بلا رمز (بيانات سابقة) يُمنَح رمزاً عند إعادة الاستيراد — بلا ترحيل."""
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import rosters as admin_mod
 
     async def go():
         eng = create_async_engine("sqlite+aiosqlite:///:memory:")
