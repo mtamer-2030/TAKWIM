@@ -82,6 +82,11 @@ def require_admin(request: Request):
     return None if is_admin(request) else RedirectResponse("/admin/login", status_code=303)
 
 
+def _ctx(request: Request, **extra) -> dict:
+    """سياق قالبٍ موحّد لكلّ مسارات الأستاذ (مشترَكٌ بين الـrouters الفرعيّة)."""
+    return {"request": request, **extra}
+
+
 def issue_student_cookie(student_id: int) -> str:
     """قيمة كوكي تلميذ موقَّعة تحمل معرّفه — تُوضَع في كوكي pt_student."""
     return sign(str(student_id))

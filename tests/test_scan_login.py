@@ -115,7 +115,7 @@ def test_scan_unknown_code_returns_login_error(monkeypatch):
 
 
 def test_admin_cards_and_per_student_qr(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import network as admin_mod
     cap = {}
 
     async def run():
@@ -150,7 +150,7 @@ def test_admin_cards_and_per_student_qr(monkeypatch):
 def test_qr_page_lists_all_detected_networks(monkeypatch):
     """صفحة QR تعرض كلَّ عناوين الحاسوب المكتشَفة (لا واحداً) — ليختار الأستاذ العنوان
     المطابق لشبكة الهواتف حين يحمل الحاسوب أكثر من بطاقة/شبكة."""
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import network as admin_mod
     cap = {}
     monkeypatch.setattr(admin_mod, "lan_ips", lambda: ["192.168.0.92", "192.168.11.104"])
     monkeypatch.setattr(admin_mod.settings, "port", 8000)
@@ -170,7 +170,7 @@ def test_qr_page_lists_all_detected_networks(monkeypatch):
 
 
 def test_connected_endpoint_reports_count(monkeypatch):
-    from app.v2 import admin as admin_mod
+    from app.v2.routers import network as admin_mod
     presence.reset()
     presence.touch("192.168.0.5")
 
