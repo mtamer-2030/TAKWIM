@@ -47,3 +47,45 @@ def test_grading_center_lists_pending(monkeypatch):
     assert len(captured["items"]) == 1
     it = captured["items"][0]
     assert it["submitted"] == 2 and it["pending"] == 1 and it["title"] == "فرض"
+
+
+def test_grading_center_moves_completed_out_of_queue(monkeypatch):
+    """تقويمٌ كلّ أجوبته مُصادَقٌ عليها لا يظهر في طابور التصحيح (items)، بل في
+    قائمة «مكتملة» (done_items) للمراجعة فقط — فلا يُطلَب تصحيحه مرّةً أخرى."""
+    from app.v2.routers import quizzes as admin_mod
+    captured = {}
+
+    async def run():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        S = async_sessionmaker(eng, expire_on_commit=False)
+        monkeypatch.setattr(admin_mod, "AsyncSessionLocal", S)
+        monkeypatch.setattr(admin_mod.templates, "TemplateResponse",
+                            lambda name, ctx: captured.update(name=name, **ctx) or SimpleNamespace(status_code=200))
+        async with S() as s:
+            lv = Level(name="ج", code="TC"); s.add(lv); await s.flush()
+            st = Student(full_name="ت", level_id=lv.id, group_name="TC1"); s.add(st); await s.flush()
+            # تقويمٌ «مكتمل»: كلّ أجوبته مصادَقة
+            done = Quiz(title="مكتمل", kind="exam", level_id=lv.id, group_name="TC1")
+            # تقويمٌ «منتظِر»: جوابٌ غير مصادَق
+            pend = Quiz(title="منتظِر", kind="exam", level_id=lv.id, group_name="TC1")
+            s.add_all([done, pend]); await s.flush()
+            qd = QuizQuestion(quiz_id=done.id, qtype="long_text", prompt="س", payload={},
+                              max_score=4, position=0)
+            qp = QuizQuestion(quiz_id=pend.id, qtype="long_text", prompt="س", payload={},
+                              max_score=4, position=0)
+            s.add_all([qd, qp]); await s.flush()
+            s.add(Answer(quiz_question_id=qd.id, student_id=st.id, raw={"text": "a"},
+                         manual_score=3, submitted=True, teacher_confirmed=True))
+            s.add(Answer(quiz_question_id=qp.id, student_id=st.id, raw={"text": "b"},
+                         submitted=True, teacher_confirmed=False))
+            await s.commit()
+        await admin_mod.grading_center(_req())
+        await eng.dispose()
+
+    asyncio.run(run())
+    titles_pending = {it["title"] for it in captured["items"]}
+    titles_done = {it["title"] for it in captured["done_items"]}
+    assert titles_pending == {"منتظِر"}      # طابور التصحيح: المنتظِر فقط
+    assert titles_done == {"مكتمل"}          # المكتمل خرج للمراجعة فقط

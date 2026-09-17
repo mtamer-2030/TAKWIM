@@ -2,8 +2,8 @@
 {% block title %}التصحيح · PHILO-TECH{% endblock %}
 {% block content %}
 <h2 class="h2 mb-1">التصحيح</h2>
-<p class="text-secondary">التقويمات التي سلّم التلاميذ فيها. المغلقة مُصحَّحة يقينيّاً؛
-  افتح التصحيح لمراجعة المفتوحة والمصادقة (وزرّ الذكاء الاصطناعيّ لاقتراح نقطها).</p>
+<p class="text-secondary">التقويمات التي تنتظر مصادقتك (خاصّةً الأسئلة المفتوحة). المغلقة
+  مُصحَّحة يقينيّاً. بعد المصادقة تدخل النتائجُ التقاريرَ فوراً، ويخرج التقويمُ من الطابور.</p>
 
 {% if cleared is not none %}
 <div class="alert alert-success">حُذفت {{ cleared }} إجابة عالقة. اختفى التقويم من القائمة إن لم تبقَ له أجوبة.</div>
@@ -18,13 +18,9 @@
       <td><strong>{{ it.title }}</strong></td>
       <td>{{ it.group or '—' }}</td>
       <td>{{ it.submitted }}</td>
-      <td>
-        {% if it.pending %}<span class="badge bg-orange">{{ it.pending }}</span>
-        {% else %}<span class="badge bg-green">مكتمل ✓</span>{% endif %}
-      </td>
+      <td><span class="badge bg-orange">{{ it.pending }}</span></td>
       <td class="text-end" style="white-space:nowrap">
-        <a class="btn btn-sm {{ 'btn-primary' if it.pending else 'btn-outline-primary' }}"
-           href="/admin/quizzes/{{ it.id }}/grade">فتح التصحيح ←</a>
+        <a class="btn btn-sm btn-primary" href="/admin/quizzes/{{ it.id }}/grade">فتح التصحيح ←</a>
         <form method="post" action="/admin/grading/{{ it.id }}/clear" style="display:inline"
               onsubmit="return confirm('حذف كلّ الأجوبة ({{ it.submitted }}) لهذا التقويم؟\nلإزالة أجوبةٍ عالقةٍ من جلساتٍ مشوّهة أو غير مكتملة. لا رجعة.');">
           <button class="btn btn-sm btn-outline-danger">🗑 حذف الأجوبة</button></form>
@@ -32,9 +28,34 @@
     </tr>
   {% else %}
     <tr><td colspan="5" class="text-secondary text-center py-4">
-      لا أجوبة مُسلَّمة بعد. ستظهر التقويمات هنا فور تسليم التلاميذ.</td></tr>
+      لا تصحيحَ منتظِرٌ — كلّ ما سُلِّم مُصادَقٌ عليه ✓. النتائج في قسم التقارير.</td></tr>
   {% endfor %}
   </tbody>
 </table></div>
 </div>
+
+{% if done_items %}
+<details class="card mt-3">
+  <summary class="card-header" style="cursor:pointer;list-style:revert">
+    <span class="card-title">مكتملة — مُصادَقٌ عليها ({{ done_items|length }})</span>
+    <span class="text-secondary ms-2" style="font-weight:normal">للمراجعة فقط؛ نتائجها محفوظةٌ في التقارير.</span>
+  </summary>
+  <div class="table-responsive"><table class="table table-vcenter mb-0">
+    <thead><tr><th>التقويم</th><th>الفوج</th><th>أجوبة مُسلَّمة</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>
+    {% for it in done_items %}
+      <tr>
+        <td>{{ it.title }}</td>
+        <td>{{ it.group or '—' }}</td>
+        <td>{{ it.submitted }}</td>
+        <td><span class="badge bg-green">مكتمل ✓</span></td>
+        <td class="text-end" style="white-space:nowrap">
+          <a class="btn btn-sm btn-outline-secondary" href="/admin/quizzes/{{ it.id }}/grade">مراجعة</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</details>
+{% endif %}
 {% endblock %}

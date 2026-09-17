@@ -430,9 +430,14 @@ async def grading_center(request: Request):
             .group_by(Quiz.id).order_by(Quiz.created_at.desc()))).all()
     items = [{"id": r[0], "title": r[1], "group": r[2], "submitted": r[3],
               "pending": int(r[4] or 0)} for r in rows]
+    # ما يحتاج تصحيحاً فعلاً (منتظِرٌ للمصادقة) منفصلٌ عمّا اكتمل — فلا يظهر المصحَّح
+    # ثانيةً في طابور العمل. المكتمل يبقى للمراجعة فقط (نتائجه محفوظةٌ في التقارير).
+    pending_items = [it for it in items if it["pending"] > 0]
+    done_items = [it for it in items if it["pending"] == 0]
     return templates.TemplateResponse(
         "admin/grading.html",
-        _ctx(request, items=items, cleared=request.query_params.get("cleared")))
+        _ctx(request, items=pending_items, done_items=done_items,
+             cleared=request.query_params.get("cleared")))
 
 
 @router.post("/grading/{quiz_id}/clear")
