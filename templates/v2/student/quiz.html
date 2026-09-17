@@ -35,6 +35,24 @@
   .qz-num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem;
     border-radius: 8px; background: var(--st-primary); color: #fff; font-size: .85rem;
     font-weight: 700; margin-inline-end: .4rem; vertical-align: middle; }
+  /* روادع الغشّ: تعطيل تحديد نصوص الأسئلة (يبقى الكتابة في خانات الإجابة ممكناً). */
+  .pt-main { -webkit-user-select: none; user-select: none; }
+  #quizForm input, #quizForm textarea, #quizForm select {
+    -webkit-user-select: text; user-select: text; }
+  .ac-ov { position: fixed; inset: 0; z-index: 9999; display: none;
+    align-items: center; justify-content: center; padding: 1.2rem;
+    background: rgba(10,20,35,.92); color: #fff; text-align: center; }
+  .ac-ov.show { display: flex; }
+  .ac-card { max-width: 22rem; background: #fff; color: var(--st-text, #1a2230);
+    border-radius: 16px; padding: 1.4rem 1.2rem; }
+  .ac-card h3 { margin: 0 0 .6rem; }
+  .ac-card p { margin: 0 0 1rem; line-height: 1.8; font-size: .95rem; color: #55606e; }
+  .ac-card.warn { border-top: 6px solid var(--st-err, #c62828); }
+  .ac-btn { display: inline-block; width: 100%; padding: .8rem; border: 0; border-radius: 12px;
+    background: var(--st-primary, #12489e); color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; }
+  #acBadge { position: fixed; inset-inline-start: .6rem; bottom: .6rem; z-index: 50; display: none;
+    background: var(--st-err, #c62828); color: #fff; font-size: .8rem; font-weight: 700;
+    padding: .3rem .7rem; border-radius: 999px; }
 </style>
 <div class="pt-shell">
   <div class="pt-header">
@@ -302,6 +320,93 @@
     // وجودُ نسخة محلّية يعني أنّ حفظاً سابقاً لم يكتمل: علّمها غير محفوظة وأعد الإرسال.
     dirty = true; render(); updateProgress(); save();
   })();
+})();
+</script>
+
+<script>
+// ═══ روادع الغشّ (واجهة التلميذ) ═══
+// حدٌّ صريح: المتصفّح لا يستطيع منع لقطة الشاشة ولا برامج AI فوق النافذة (قدرةٌ على
+// مستوى نظام التشغيل). هذه روادعُ تعرقل النقل وتكشف مغادرة الشاشة، لا أقفالٌ مطلقة.
+(function () {
+  var main = document.querySelector('.pt-main');
+  var form = document.getElementById('quizForm');
+  if (!main || !form) return;
+
+  // (١) منع النسخ/القصّ/اللصق/القائمة اليمنى — يعرقل نقل السؤال إلى AI ولصق جوابٍ جاهز.
+  function block(e) { e.preventDefault(); return false; }
+  main.addEventListener('contextmenu', block);
+  main.addEventListener('copy', block);
+  main.addEventListener('cut', block);
+  form.addEventListener('paste', block);        // لا لصقَ في خانات الإجابة
+  main.addEventListener('dragstart', block);
+
+  // طبقاتٌ (تُنشأ ديناميّاً لتفادي حشو القالب).
+  function ov(id, cls) {
+    var d = document.createElement('div'); d.id = id; d.className = 'ac-ov' + (cls || '');
+    document.body.appendChild(d); return d;
+  }
+  var startOv = ov('acStart');
+  startOv.innerHTML = '<div class="ac-card"><h3>وضع التقويم المراقَب</h3>' +
+    '<p>سيُفتح التقويم بملء الشاشة. تجنّب مغادرة الشاشة أو فتح تطبيقٍ آخر؛ فكلّ مغادرةٍ تُسجَّل. النسخُ واللصقُ معطّلان.</p>' +
+    '<button type="button" class="ac-btn" id="acStartBtn">ابدأ التقويم</button></div>';
+  var leaveOv = ov('acLeave');
+  leaveOv.innerHTML = '<div class="ac-card warn"><h3>⚠ رُصدت مغادرةٌ للتقويم</h3>' +
+    '<p id="acLeaveMsg">عُدتَ إلى التقويم. غادرتَ الشاشة — يُنصَح بالبقاء داخل التقويم حتّى التسليم.</p>' +
+    '<button type="button" class="ac-btn" id="acBackBtn">العودة إلى التقويم</button></div>';
+  var badge = document.createElement('div'); badge.id = 'acBadge';
+  document.body.appendChild(badge);
+
+  var leaves = 0, armed = false;
+  var fsEl = document.documentElement;
+  function canFs() { return !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen); }
+  function enterFs() {
+    try { (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen || function(){}).call(fsEl); }
+    catch (e) {}
+  }
+  function isFs() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+
+  function bump(reason) {
+    if (!armed) return;
+    leaves++;
+    badge.textContent = 'مغادرات الشاشة: ' + leaves;
+    badge.style.display = 'block';
+    document.getElementById('acLeaveMsg').textContent =
+      'غادرتَ الشاشة ' + leaves + ' مرّة. ' +
+      (reason === 'fs' ? 'خرجتَ من ملء الشاشة. ' : '') +
+      'ابقَ داخل التقويم حتّى التسليم — المغادراتُ مسجّلة.';
+    leaveOv.classList.add('show');
+  }
+
+  document.getElementById('acStartBtn').addEventListener('click', function () {
+    startOv.classList.remove('show');
+    if (canFs()) enterFs();
+    armed = true;
+  });
+  document.getElementById('acBackBtn').addEventListener('click', function () {
+    leaveOv.classList.remove('show');
+    if (canFs() && !isFs()) enterFs();
+  });
+
+  // (٢) كشف مغادرة الشاشة: التبديل لتطبيق/تبويب آخر أو إخفاء الصفحة (لقطة/AbAI غالباً).
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) bump('hidden');
+  });
+  // (٣) الخروج من ملء الشاشة أثناء التقويم يُرصد أيضاً.
+  document.addEventListener('fullscreenchange', function () {
+    if (armed && !isFs()) bump('fs');
+  });
+  document.addEventListener('webkitfullscreenchange', function () {
+    if (armed && !isFs()) bump('fs');
+  });
+
+  // لا نعرقل التسليم: عند الإرسال نطفئ المراقبة ونخرج من ملء الشاشة بهدوء.
+  form.addEventListener('submit', function () {
+    armed = false;
+    try { if (isFs() && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+  });
+
+  // تظهر شاشة البدء فوراً (إيماءةُ المستخدم شرطٌ لملء الشاشة على المتصفّحات).
+  startOv.classList.add('show');
 })();
 </script>
 {% endblock %}
