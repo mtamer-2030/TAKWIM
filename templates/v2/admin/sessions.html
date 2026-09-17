@@ -3,6 +3,7 @@
 {% block content %}
 <h2 class="h2 mb-3">الجلسات الصفّية</h2>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+{% if merged %}<div class="alert alert-success">تمّ دمج {{ merged }} جلسةً في جلسةٍ واحدة. الأجوبة كلّها محفوظةٌ وتظهر معاً في التقارير.</div>{% endif %}
 
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">فتح جلسة جديدة</h3>
@@ -40,6 +41,11 @@
           <a class="btn btn-sm btn-primary" href="/admin/sessions/{{ r.s.id }}/live">المتابعة الآنية</a>
         {% else %}
           <a class="btn btn-sm btn-outline-primary" href="/admin/sessions/{{ r.s.id }}">إدارة</a>
+        {% endif %}
+        {% if r.dup %}
+        <form method="post" action="/admin/sessions/{{ r.s.id }}/merge" style="display:inline"
+              onsubmit="return confirm('دمج كلّ جلسات هذا التقويم لهذا الفوج في جلسةٍ واحدة؟\nكلّ الأجوبة تُحفَظ وتظهر معاً. لا يضيع شيء.');">
+          <button class="btn btn-sm btn-outline-success" title="جلستان أو أكثر لنفس التقويم والفوج">دمج الجلسات</button></form>
         {% endif %}
         <form method="post" action="/admin/sessions/{{ r.s.id }}/delete" style="display:inline"
               onsubmit="return confirm('حذف الجلسة وكلّ أجوبة المشاركين فيها لهذا التقويم؟\nتُمحى نقطُ هذه الجلسة من التقارير. لا رجعة.');">

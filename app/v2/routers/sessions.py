@@ -46,15 +46,20 @@ async def sessions_list(request: Request):
         groups = [r[0] for r in (await s.execute(
             select(Student.group_name).where(Student.group_name.is_not(None))
             .distinct().order_by(Student.group_name))).all()]
+    # عائلاتٌ لها أكثر من جلسةٍ لنفس (التقويم + الفوج) → تُعرَض معها إمكانيّة الدمج.
+    from collections import Counter
+    fam = Counter((sess.quiz_id, sess.group_name) for sess in sessions)
     rows = []
     for sess in sessions:
         subs = sum(1 for p in sess.participants if p.submitted_at)
         present = sum(1 for p in sess.participants if p.present)
         rows.append({"s": sess, "subs": subs, "present": present,
-                     "total": len(sess.participants)})
+                     "total": len(sess.participants),
+                     "dup": fam[(sess.quiz_id, sess.group_name)] > 1})
     return templates.TemplateResponse(
         "admin/sessions.html", _ctx(request, rows=rows, quizzes=quizzes, groups=groups,
-                                    error=request.query_params.get("error")))
+                                    error=request.query_params.get("error"),
+                                    merged=request.query_params.get("merged")))
 
 
 @router.post("/sessions/create")
@@ -201,6 +206,70 @@ async def session_delete(request: Request, sid: int):
             await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
             await s.commit()
     return RedirectResponse("/admin/sessions", status_code=303)
+
+
+@router.post("/sessions/{sid}/merge")
+async def session_merge(request: Request, sid: int):
+    """يدمج كلّ جلسات نفس (التقويم + الفوج) في جلسةٍ واحدة (الأقدم) فتظهر كجلسةٍ واحدة.
+
+    الأجوبة أصلاً مخزّنةٌ بمفتاح (تلميذ + سؤال) لا بالجلسة — فالتقارير مدموجةٌ سلفاً؛
+    هذا الدمج يوحّد **سجلّات الجلسة** نفسها: يُنقَل المشاركون إلى الأقدم بلا تكرار
+    (حاضرٌ إن حضر في أيّ جلسة، ويُحفَظ أبكر دخولٍ/تسليم)، وتُحذف الجلسات الأخرى.
+    لا يمسّ أيّ جواب — لا يضيع شيء."""
+    if (g := require_admin(request)):
+        return g
+    async with AsyncSessionLocal() as s:
+        target = await s.get(QuizSession, sid)
+        if target is None:
+            return RedirectResponse(
+                "/admin/sessions?error=الجلسة غير موجودة.", status_code=303)
+        fam = (await s.execute(select(QuizSession).where(
+            QuizSession.quiz_id == target.quiz_id,
+            QuizSession.group_name == target.group_name))).scalars().all()
+        if len(fam) < 2:
+            return RedirectResponse(
+                "/admin/sessions?error=لا توجد جلسةٌ أخرى لنفس التقويم والفوج للدمج.",
+                status_code=303)
+        # الوجهة = الأقدم إنشاءً (حفظاً للتسلسل الزمنيّ)؛ الباقي يُدمَج فيها.
+        fam.sort(key=lambda x: (x.created_at is None, x.created_at, x.id))
+        dest, others = fam[0], fam[1:]
+        dest_parts = (await s.execute(select(SessionStudent)
+                      .where(SessionStudent.session_id == dest.id))).scalars().all()
+        by_student = {p.student_id: p for p in dest_parts}
+        statuses = {x.status for x in fam}
+        for other in others:
+            oparts = (await s.execute(select(SessionStudent)
+                      .where(SessionStudent.session_id == other.id))).scalars().all()
+            for p in oparts:
+                keep = by_student.get(p.student_id)
+                if keep is None:
+                    p.session_id = dest.id                 # نقلُ مشاركٍ جديدٍ للوجهة
+                    by_student[p.student_id] = p
+                else:
+                    # دمجُ مشاركٍ مكرّر: حاضرٌ إن حضر في أيّ جلسة؛ أبكر دخول/تسليم؛ رمز جهازٍ إن وُجد
+                    keep.present = keep.present or p.present
+                    if p.joined_at and (keep.joined_at is None or p.joined_at < keep.joined_at):
+                        keep.joined_at = p.joined_at
+                    if p.submitted_at and (keep.submitted_at is None or p.submitted_at < keep.submitted_at):
+                        keep.submitted_at = p.submitted_at
+                    if not keep.device_token and p.device_token:
+                        keep.device_token = p.device_token
+                    await s.delete(p)                       # حُذف المكرّر (قيد التفرّد)
+            # توحيدُ توقيتات الوجهة: أبكر فتحٍ وأحدث إغلاق.
+            if other.opened_at and (dest.opened_at is None or other.opened_at < dest.opened_at):
+                dest.opened_at = other.opened_at
+            if other.closed_at and (dest.closed_at is None or other.closed_at > dest.closed_at):
+                dest.closed_at = other.closed_at
+            await s.flush()                                 # ثبِّت نقل المشاركين قبل حذف الجلسة
+            await s.delete(other)
+        # حالةُ الوجهة: مفتوحةٌ إن كان أيٌّ منها مفتوحاً، وإلّا مغلقةٌ إن أُغلق أيّها.
+        if "open" in statuses:
+            dest.status = "open"
+        elif "closed" in statuses:
+            dest.status = "closed"
+        await s.commit()
+        merged = len(others)
+    return RedirectResponse(f"/admin/sessions?merged={merged}", status_code=303)
 
 
 @router.get("/sessions/{sid}/live", response_class=HTMLResponse)
