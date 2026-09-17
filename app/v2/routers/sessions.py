@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import delete as sa_delete, select
 
+from ... import proctor
 from ...backup import try_backup_quiet
 from ...constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED, level_of_class_label
 from ...database import AsyncSessionLocal
@@ -202,6 +203,7 @@ async def session_delete(request: Request, sid: int):
         await s.execute(sa_delete(SessionStudent).where(SessionStudent.session_id == sid))
         await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
         await s.commit()
+    proctor.reset_session(sid)     # عدّادات المغادرة في الذاكرة — انتهت الحصّة
     return RedirectResponse("/admin/sessions", status_code=303)
 
 
@@ -309,6 +311,7 @@ async def session_live_status(request: Request, sid: int):
                 select(Answer.student_id, Answer.quiz_question_id)
                 .where(Answer.quiz_question_id.in_(answerable)))).all():
                 answered.setdefault(stu_id, set()).add(qq_id)
+    leaves_map = proctor.for_session(sid)          # {student_id: عدد مغادرات الشاشة}
     parts = sorted(sess.participants, key=lambda p: p.student.full_name)
     rows = []
     for p in parts:
@@ -317,6 +320,7 @@ async def session_live_status(request: Request, sid: int):
         last = max((qnum[q] for q in done_ids), default=0)   # أبعد سؤال بلغه
         rows.append({"p": p, "name": p.student.full_name, "status": _live_status(p),
                      "done": done, "total": total_q, "last": last,
+                     "leaves": leaves_map.get(p.student_id, 0),
                      "pct": round(done * 100 / total_q) if total_q else 0})
     present = sum(1 for p in parts if p.present)
     submitted = sum(1 for p in parts if p.submitted_at)

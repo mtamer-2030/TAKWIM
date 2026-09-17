@@ -25,6 +25,7 @@ from ..models import (
     SessionStudent,
     Student,
 )
+from .. import proctor
 from ..constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
@@ -463,6 +464,22 @@ async def save_quiz_draft(request: Request, quiz_id: int):
             await s.commit()
     from datetime import datetime
     return HTMLResponse(f'حُفظ ✓ {datetime.now().strftime("%H:%M")}')
+
+
+@router.post("/quiz/{quiz_id}/leave")
+async def report_leave(request: Request, quiz_id: int):
+    """رادعُ غشّ: تُبلّغ واجهةُ التلميذ عن مغادرةٍ للشاشة (تبديلُ تطبيق/تبويب أو خروجٌ من
+    ملء الشاشة). نسجّلها في عدّادٍ بالذاكرة مفتاحه (الجلسة، التلميذ) ليراها الأستاذ في
+    المتابعة الآنية. بلا مخطّط، وبلا أثرٍ على النتائج. تُستدعى عبر sendBeacon."""
+    student = await _load_student(request)
+    if student is None:
+        return HTMLResponse("", status_code=204)
+    async with AsyncSessionLocal() as s:
+        sess, part = await _open_session_for(s, student, quiz_id)
+    # نسجّل فقط داخل جلسةٍ مفتوحةٍ للتلميذ ولم يُسلّم بعد (لا معنى للمغادرة بعد التسليم).
+    if sess is not None and part is not None and part.submitted_at is None:
+        proctor.record(sess.id, student.id)
+    return HTMLResponse("", status_code=204)
 
 
 _SKILL_BANDS = [

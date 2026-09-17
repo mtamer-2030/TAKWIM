@@ -331,6 +331,7 @@
   var main = document.querySelector('.pt-main');
   var form = document.getElementById('quizForm');
   if (!main || !form) return;
+  var QID = {{ quiz.id }};
 
   // (١) منع النسخ/القصّ/اللصق/القائمة اليمنى — يعرقل نقل السؤال إلى AI ولصق جوابٍ جاهز.
   function block(e) { e.preventDefault(); return false; }
@@ -347,7 +348,7 @@
   }
   var startOv = ov('acStart');
   startOv.innerHTML = '<div class="ac-card"><h3>وضع التقويم المراقَب</h3>' +
-    '<p>سيُفتح التقويم بملء الشاشة. تجنّب مغادرة الشاشة أو فتح تطبيقٍ آخر؛ فكلّ مغادرةٍ تُسجَّل. النسخُ واللصقُ معطّلان.</p>' +
+    '<p>سيُفتح التقويم بملء الشاشة. تجنّب مغادرة الشاشة أو فتح تطبيقٍ آخر؛ فأستاذُك يرى كلّ مغادرةٍ على شاشته وتُسجَّل عليك. النسخُ واللصقُ معطّلان.</p>' +
     '<button type="button" class="ac-btn" id="acStartBtn">ابدأ التقويم</button></div>';
   var leaveOv = ov('acLeave');
   leaveOv.innerHTML = '<div class="ac-card warn"><h3>⚠ رُصدت مغادرةٌ للتقويم</h3>' +
@@ -368,13 +369,18 @@
   function bump(reason) {
     if (!armed) return;
     leaves++;
-    badge.textContent = 'مغادرات الشاشة: ' + leaves;
+    badge.textContent = 'مغادرات مُسجَّلة: ' + leaves;
     badge.style.display = 'block';
     document.getElementById('acLeaveMsg').textContent =
       'غادرتَ الشاشة ' + leaves + ' مرّة. ' +
       (reason === 'fs' ? 'خرجتَ من ملء الشاشة. ' : '') +
-      'ابقَ داخل التقويم حتّى التسليم — المغادراتُ مسجّلة.';
+      'أستاذُك يرى هذا على شاشته وتُسجَّل عليك — ابقَ داخل التقويم حتّى التسليم.';
     leaveOv.classList.add('show');
+    // إبلاغ الأستاذ (يظهر في المتابعة الآنية). sendBeacon ينجح حتى أثناء إخفاء الصفحة.
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon('/student/quiz/' + QID + '/leave');
+      else fetch('/student/quiz/' + QID + '/leave', { method: 'POST', keepalive: true });
+    } catch (e) {}
   }
 
   document.getElementById('acStartBtn').addEventListener('click', function () {

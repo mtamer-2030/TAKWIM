@@ -19,7 +19,9 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td>{{ r.name }}</td>
+      <td>{{ r.name }}
+        {% if r.leaves %}<span class="badge bg-red ms-1" title="غادر شاشة التقويم {{ r.leaves }} مرّة (تبديل تطبيق/تبويب أو خروج من ملء الشاشة)">🚪 {{ r.leaves }}</span>{% endif %}
+      </td>
       <td><span style="color:{{ r.status[1] }};font-weight:700">{{ r.status[0] }}</span></td>
       <td>
         {% if r.p.submitted_at %}
