@@ -122,7 +122,9 @@ def test_marks_import_bad_file_shows_error(monkeypatch):
 # ═══════════════ حذف جلسةٍ يمحو أثرها ═══════════════
 
 
-def test_session_delete_purges_participant_answers(monkeypatch):
+def test_session_delete_keeps_student_results(monkeypatch):
+    """حذف سجلّ الجلسة لا يمسّ نتائج التلاميذ: الأجوبة تبقى في التقارير (تراكميّاً)،
+    وصفوفُ الحضور تُحذف بالتتالي فقط. (تغيّر السلوك: الحذف لم يعد يمحو النتائج.)"""
     from app.v2.routers import sessions as admin_mod
 
     async def go():
@@ -142,7 +144,7 @@ def test_session_delete_purges_participant_answers(monkeypatch):
             sess = QuizSession(quiz_id=quiz.id, group_name="TC1", status="open")
             s.add(sess); await s.flush()
             s.add(SessionStudent(session_id=sess.id, student_id=st1.id, present=True))
-            # جواب المشارك (يجب أن يُحذف) وجواب غير المشارك (يجب أن يبقى)
+            # جوابا التلميذين — كلاهما يجب أن يبقى بعد حذف الجلسة (نتائج تراكميّة)
             s.add(Answer(quiz_question_id=q.id, student_id=st1.id, raw={"choice": 0},
                          auto_score=1, teacher_confirmed=True, submitted=True))
             s.add(Answer(quiz_question_id=q.id, student_id=st2.id, raw={"choice": 0},
@@ -153,13 +155,16 @@ def test_session_delete_purges_participant_answers(monkeypatch):
         async with S() as s:
             remaining = (await s.execute(select(Answer))).scalars().all()
             sessions = (await s.execute(select(QuizSession))).scalars().all()
+            parts = (await s.execute(select(SessionStudent))).scalars().all()
             names = {(await s.get(Student, a.student_id)).full_name for a in remaining}
         await eng.dispose()
-        return remaining, sessions, names
+        return remaining, sessions, parts, names
 
-    remaining, sessions, names = asyncio.run(go())
-    assert sessions == []                              # الجلسة حُذفت
-    assert len(remaining) == 1 and names == {"غير مشارك"}   # أثر المشارك فقط مُحي
+    remaining, sessions, parts, names = asyncio.run(go())
+    assert sessions == []                              # سجلّ الجلسة حُذف
+    assert parts == []                                 # صفوف الحضور حُذفت بالتتالي
+    assert len(remaining) == 2                          # كلّ النتائج محفوظة
+    assert names == {"مشارك", "غير مشارك"}             # لا يضيع أثرُ أحد
 
 
 def test_grading_clear_answers_removes_stuck_answers(monkeypatch):

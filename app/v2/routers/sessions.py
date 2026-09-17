@@ -188,24 +188,20 @@ async def session_close(request: Request, sid: int):
 
 @router.post("/sessions/{sid}/delete")
 async def session_delete(request: Request, sid: int):
-    """حذف جلسةٍ (تجريبيّة غير رسميّة مثلاً) مع **أثرها في التقارير**: تُحذف أجوبةُ
-    المشاركين فيها لأسئلة هذا التقويم، فلا تبقى نقطُ التجربة في دفتر النقط. (لا يمسّ
-    أجوبة تلاميذَ غير مشاركين، ولا أسئلة التقويم نفسه — يبقى قابلاً لإعادة التمرير.)"""
+    """حذف **سجلّ الجلسة فقط** (الحضور والمتابعة الآنيّة) — دون المساس بنتائج التلاميذ.
+
+    أجوبةُ التلاميذ ونقطُهم **تبقى محفوظةً في التقارير** (الجانب التراكميّ فرديّاً
+    وجماعيّاً لا يتأثّر بحذف جلسة). صفوفُ الحضور (session_students) تُحذف تلقائيّاً
+    بالتتالي، والأجوبة مستقلّةٌ عن الجلسة (مفتاحها تلميذ+سؤال) فلا تُمسّ.
+    لإزالة نتائج تقويمٍ بالكامل عمداً: استعمل «حذف الأجوبة» في قسم التصحيح."""
     if (g := require_admin(request)):
         return g
     async with AsyncSessionLocal() as s:
-        sess = await s.get(QuizSession, sid)
-        if sess is not None:
-            part_ids = (await s.execute(select(SessionStudent.student_id)
-                        .where(SessionStudent.session_id == sid))).scalars().all()
-            qids = (await s.execute(select(QuizQuestion.id)
-                    .where(QuizQuestion.quiz_id == sess.quiz_id))).scalars().all()
-            if part_ids and qids:
-                await s.execute(sa_delete(Answer).where(
-                    Answer.student_id.in_(part_ids),
-                    Answer.quiz_question_id.in_(qids)))
-            await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
-            await s.commit()
+        # نحذف صفوف الحضور صراحةً ثمّ الجلسة (لا نعتمد على تفعيل المفاتيح الأجنبيّة).
+        # الأجوبة مستقلّةٌ عن الجلسة (مفتاحها تلميذ+سؤال) فلا تُمسّ — تبقى في التقارير.
+        await s.execute(sa_delete(SessionStudent).where(SessionStudent.session_id == sid))
+        await s.execute(sa_delete(QuizSession).where(QuizSession.id == sid))
+        await s.commit()
     return RedirectResponse("/admin/sessions", status_code=303)
 
 

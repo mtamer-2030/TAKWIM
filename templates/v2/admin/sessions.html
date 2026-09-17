@@ -50,8 +50,8 @@
           <button class="btn btn-sm btn-outline-success" title="جلستان أو أكثر لنفس التقويم والفوج">دمج الجلسات</button></form>
         {% endif %}
         <form method="post" action="/admin/sessions/{{ r.s.id }}/delete" style="display:inline"
-              onsubmit="return confirm('حذف الجلسة وكلّ أجوبة المشاركين فيها لهذا التقويم؟\nتُمحى نقطُ هذه الجلسة من التقارير. لا رجعة.');">
-          <button class="btn btn-sm btn-outline-danger">حذف</button></form>
+              onsubmit="return confirm('حذف سجلّ هذه الجلسة (الحضور والمتابعة)؟\nنتائجُ التلاميذ ونقطُهم تبقى محفوظةً في التقارير. (لإزالة النتائج عمداً: «حذف الأجوبة» في قسم التصحيح.)');">
+          <button class="btn btn-sm btn-outline-danger">حذف الجلسة</button></form>
       </td>
     </tr>
   {% else %}
