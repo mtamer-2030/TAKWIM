@@ -11,11 +11,12 @@ from sqlalchemy import delete as sa_delete, select
 
 from ... import proctor
 from ...backup import try_backup_quiet
-from ...constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED, level_of_class_label
+from ...constants import (DISPLAY_TYPES, QUESTION_TYPES_CLOSED, QUESTION_TYPES_OPEN,
+                          level_of_class_label)
 from ...database import AsyncSessionLocal
 from ...models import (Answer, Level, Quiz, QuizQuestion, QuizSession,
                        SessionStudent, Student)
-from ...services.quizzes import grade_answer
+from ...services.quizzes import grade_answer, raw_is_empty
 from ..web import _ctx, require_admin, templates
 
 router = APIRouter()
@@ -178,6 +179,10 @@ async def session_close(request: Request, sid: int):
                     graded = grade_answer(q, ans.raw)
                     ans.auto_score = graded["score"]
                     ans.teacher_confirmed = q.qtype in QUESTION_TYPES_CLOSED
+                    # «لا جواب» في سؤالٍ مفتوح → 0 مصادَقٌ عليه مباشرةً (كالتسليم اليدويّ).
+                    if q.qtype in QUESTION_TYPES_OPEN and raw_is_empty(ans.raw):
+                        ans.auto_score = 0.0
+                        ans.teacher_confirmed = True
                     ans.submitted = True
                 if drafts:
                     part.submitted_at = datetime.now()

@@ -486,6 +486,27 @@ def build_quiz(normalized: dict, *, level_id: int | None = None,
     return quiz
 
 
+def raw_is_empty(raw: dict | None) -> bool:
+    """هل الجواب الخام فارغ (لم يُلمس)؟ مصدرٌ واحدٌ يستعمله التسليم والإغلاق والتصحيح
+    (لأتمتة «لا جواب = 0» للأسئلة المفتوحة)."""
+    if not raw:
+        return True
+    if "choice" in raw:
+        return raw.get("choice") is None
+    if "choices" in raw:
+        return not raw.get("choices")
+    if "text" in raw:
+        return not (raw.get("text") or "").strip()
+    if "assignments" in raw:
+        return all(a is None for a in raw.get("assignments") or [])
+    if "order" in raw:
+        return all(not isinstance(x, int) or x < 0 for x in raw.get("order") or [])
+    if "cells" in raw:
+        return all(not str(c).strip()
+                   for row in (raw.get("cells") or []) for c in row)
+    return not any(raw.values())
+
+
 def grade_answer(question: QuizQuestion, raw: dict | None) -> dict:
     """يصحّح جواباً واحداً يقينياً.
 

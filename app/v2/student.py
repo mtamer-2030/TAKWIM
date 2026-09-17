@@ -26,7 +26,7 @@ from ..models import (
     Student,
 )
 from .. import proctor
-from ..constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED
+from ..constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED, QUESTION_TYPES_OPEN
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
 from .web import STUDENT_COOKIE, current_student_id, issue_student_cookie, templates
@@ -377,20 +377,26 @@ async def submit_quiz(request: Request, quiz_id: int):
                 continue
             raw = _raw_from_form(q, form)
             graded = grade_answer(q, raw)
+            score = graded["score"]
             # المصادقة الآلية للأسئلة المغلقة (تصحيح يقيني) — تدخل التقارير فوراً كما في v1.
             # المفتوحة تبقى غير مصادَقة حتى يراجعها الأستاذ في شاشة التصحيح.
             auto_confirm = q.qtype in QUESTION_TYPES_CLOSED
+            # «لا جواب» في سؤالٍ مفتوح → نقطةٌ 0 مباشرةً ومصادَقٌ عليها (لا شيء ليصحّحه
+            # الأستاذ)، فتدخل التقارير فوراً ولا تُثقِل طابور التصحيح.
+            if q.qtype in QUESTION_TYPES_OPEN and _raw_is_empty(raw):
+                score = 0.0
+                auto_confirm = True
             # حفظ/تحديث الجواب (فريد لكلّ سؤال+تلميذ)
             existing = await s.scalar(select(Answer).where(
                 Answer.quiz_question_id == q.id, Answer.student_id == student.id))
             if existing:
                 existing.raw = raw
-                existing.auto_score = graded["score"]
+                existing.auto_score = score
                 existing.teacher_confirmed = auto_confirm
                 existing.submitted = True          # تسليم نهائيّ (لا مسوّدة)
             else:
                 s.add(Answer(quiz_question_id=q.id, student_id=student.id,
-                             raw=raw, auto_score=graded["score"],
+                             raw=raw, auto_score=score,
                              teacher_confirmed=auto_confirm, submitted=True))
             results.append({"q": q, "graded": graded})
         # تعليم التسليم في الجلسة (للمتابعة الآنية)

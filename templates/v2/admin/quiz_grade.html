@@ -9,6 +9,7 @@
   لا يدخل الحساب والتقارير (والذكاء الاصطناعي) إلّا جوابٌ <b>مصادَق عليه</b>.</p>
 
 {% if ai_msg %}<div class="alert alert-info">{{ ai_msg }}</div>{% endif %}
+{% if saved is not none %}<div class="alert alert-success">✓ حُفظ التصحيح — صودق على {{ saved }} جواب ودخلت التقارير.</div>{% endif %}
 {% if warn %}<div class="alert alert-warning">⚠ لم تُحفَظ مصادقةُ {{ warn }} جوابٍ مفتوح لأنّه بلا نقطة — اكتب النقطة أوّلاً ثمّ صادِق.</div>{% endif %}
 
 {% if rubric %}
@@ -37,13 +38,10 @@
   </form>
 </div></div>
 
-<div id="gradeSaved" class="alert alert-success" style="display:none">✓ حُفظ التصحيح.</div>
-<form method="post" action="/admin/quizzes/{{ quiz.id }}/grade"
-      hx-post="/admin/quizzes/{{ quiz.id }}/grade" hx-target="#gradeRows" hx-swap="outerHTML"
-      hx-on::after-request="if(event.detail.successful){var b=document.getElementById('gradeSaved');b.style.display='block';setTimeout(function(){b.style.display='none'},2500);}">
+<form method="post" action="/admin/quizzes/{{ quiz.id }}/grade">
   {% include "admin/_quiz_grade_rows.html" %}
-  <div class="d-flex gap-2 mb-4">
-    <button class="btn btn-primary">حفظ ومصادقة</button>
+  <div class="d-flex gap-2 mb-4" style="position:sticky;bottom:0;background:var(--tblr-body-bg,#fff);padding:.6rem 0;z-index:3">
+    <button class="btn btn-primary">💾 حفظ ومصادقة</button>
     <button type="button" class="btn btn-outline-secondary" onclick="markAllGradable()">
       تأشير القابل للمصادقة</button>
   </div>

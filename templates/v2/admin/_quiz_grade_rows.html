@@ -24,8 +24,9 @@
             {% else %}
               <input type="text" inputmode="decimal" dir="ltr"
                      name="score_{{ a.ans.id }}" class="form-control form-control-sm"
-                     placeholder="/{{ item.q.max_score }}" title="النقطة على {{ item.q.max_score }} — تقبل الفاصلة (3٫5 أو 3.5)"
-                     value="{{ a.effective if a.effective is not none else '' }}">
+                     placeholder="/{{ item.q.max_score }}" title="النقطة على {{ item.q.max_score }} — تقبل الفاصلة ورقمين بعدها (0.25 · 1.75 · 3٫5)"
+                     value="{{ a.effective if a.effective is not none else ('0' if a.blank else '') }}">
+              {% if a.blank %}<span class="badge bg-secondary-lt ms-1" title="لا جواب — تُحتسب 0">لا جواب</span>{% endif %}
             {% endif %}
           </td>
           <td class="text-center">

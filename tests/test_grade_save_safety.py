@@ -158,3 +158,62 @@ def test_confirm_open_with_comma_score_persists(monkeypatch):
 
     confirmed, score = asyncio.run(run())
     assert confirmed is True and score == 3.5     # حُفظت النقطة وثبتت المصادقة
+
+
+def _setup_empty_open(monkeypatch):
+    """جوابٌ مفتوحٌ فارغٌ (لا جواب) مُسلَّمٌ غير مصادَق — لاختبار أتمتة 0."""
+    from app.v2.routers import quizzes as admin_mod
+
+    async def build():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        S = async_sessionmaker(eng, expire_on_commit=False)
+        monkeypatch.setattr(admin_mod, "AsyncSessionLocal", S)
+        async with S() as s:
+            lv = Level(name="ج", code="TC"); s.add(lv); await s.flush()
+            st = Student(full_name="ت", level_id=lv.id, group_name="TC1"); s.add(st); await s.flush()
+            quiz = Quiz(title="ق", kind="exam", level_id=lv.id); s.add(quiz); await s.flush()
+            q = QuizQuestion(quiz_id=quiz.id, qtype="long_text", prompt="حلّل",
+                             payload={}, max_score=4, position=0); s.add(q); await s.flush()
+            a = Answer(quiz_question_id=q.id, student_id=st.id, raw={"text": ""},
+                       submitted=True, teacher_confirmed=False)
+            s.add(a); await s.flush(); await s.commit()
+            return eng, S, admin_mod, quiz.id, a.id
+    return build
+
+
+def test_empty_open_auto_zero_and_confirmed(monkeypatch):
+    """«لا جواب» في مفتوح → 0 ومصادَقٌ عليه تلقائيّاً عند الحفظ، بلا كتابةٍ من الأستاذ."""
+    build = _setup_empty_open(monkeypatch)
+
+    async def run():
+        eng, S, admin_mod, qid, aid = await build()
+        form = FormData([("shown", str(aid))])       # بلا نقطة وبلا تأشير
+        await admin_mod.quiz_grade_save(_Req(form), qid)
+        async with S() as s:
+            ans = await s.get(Answer, aid)
+            state = (ans.manual_score, ans.teacher_confirmed)
+        await eng.dispose()
+        return state
+
+    score, confirmed = asyncio.run(run())
+    assert score == 0.0 and confirmed is True
+
+
+def test_score_clamped_to_max_and_rounded(monkeypatch):
+    """نقطةٌ فوق السلّم تُحصَر فيه، وتُقرّب لرقمين — 99 على /4 تصير 4.0."""
+    build = _setup(monkeypatch)
+
+    async def run():
+        eng, S, admin_mod, qid, aid = await build()
+        form = FormData([("shown", str(aid)), (f"score_{aid}", "99"), (f"confirm_{aid}", "on")])
+        await admin_mod.quiz_grade_save(_Req(form), qid)
+        async with S() as s:
+            ans = await s.get(Answer, aid)
+            state = (ans.manual_score, ans.teacher_confirmed)
+        await eng.dispose()
+        return state
+
+    score, confirmed = asyncio.run(run())
+    assert score == 4.0 and confirmed is True

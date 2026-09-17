@@ -15,7 +15,7 @@ from ...ai_feedback import (AIUnavailable, extract_quiz_json, ollama_available,
                             suggest_open_score)
 from ...cloud_ai import CloudAIUnavailable, cloud_available, extract_quiz_cloud
 from ...constants import (COMPETENCIES, COMPETENCY_TO_SKILL, DISPLAY_TYPES, KINDS,
-                          QUESTION_TYPES_CLOSED)
+                          QUESTION_TYPES_CLOSED, QUESTION_TYPES_OPEN)
 from ...database import AsyncSessionLocal
 from ...docx_import import parse_docx, parse_lines
 from ...docx_template import build_template_docx
@@ -24,7 +24,7 @@ from ...models import (Answer, Level, Quiz, QuizQuestion, QuizSession,
                        SessionStudent, Skill, Student)
 from ...services.quizzes import (QuizImportError, attach_answer_elements, build_quiz,
                                  heuristic_quiz_from_text, normalize_quiz_json,
-                                 readable_answer, resolve_skill_id)
+                                 raw_is_empty, readable_answer, resolve_skill_id)
 from ..web import _ctx, require_admin, skill_id_map, templates
 
 router = APIRouter()
@@ -672,6 +672,7 @@ async def _grade_view(s, quiz_id: int):
             "readable": readable_answer(q, ans.raw),
             "effective": ans.manual_score if ans.manual_score is not None else ans.auto_score,
             "submitted": ans.submitted,          # سلّم؟ أم مسوّدة لم تُسلَّم؟
+            "blank": raw_is_empty(ans.raw),      # «لا جواب» → يُعرَض بنقطة 0 جاهزة
         })
         answered.setdefault(q.id, set()).add(student.id)
     # لكلّ سؤال: من لم يجب (متوقَّع بلا أيّ جواب) — الحالة الثالثة.
@@ -705,7 +706,8 @@ async def quiz_grade_page(request: Request, quiz_id: int):
              competencies=list(COMPETENCIES.items()),
              online=ollama_available(),
              ai_msg=request.query_params.get("ai"),
-             warn=request.query_params.get("warn")))
+             warn=request.query_params.get("warn"),
+             saved=request.query_params.get("saved")))
 
 
 @router.post("/quizzes/{quiz_id}/grade/ai")
@@ -787,21 +789,30 @@ async def quiz_grade_save(request: Request, quiz_id: int):
             qmap = {q.id: q for q in (await s.execute(
                 select(QuizQuestion).where(QuizQuestion.quiz_id == quiz_id))).scalars().all()}
             for ans in answers:
+                q = qmap.get(ans.quiz_question_id)
+                is_closed = q is not None and q.qtype in QUESTION_TYPES_CLOSED
+                is_open = q is not None and q.qtype in QUESTION_TYPES_OPEN
+                maxs = float(q.max_score) if (q is not None and q.max_score) else None
                 raw_score = form.get(f"score_{ans.id}")
                 if raw_score not in (None, ""):
                     try:
-                        # متسامحٌ مع الفاصلة العربيّة/الفرنسيّة (3,5) والمسافات.
-                        ans.manual_score = float(str(raw_score).replace(",", ".").strip())
+                        # متسامحٌ مع الفاصلة (3,5 أو 3.5)، رقمان بعدها، ومحصورٌ في [0..السلّم].
+                        val = float(str(raw_score).replace(",", ".").strip())
+                        if maxs is not None:
+                            val = max(0.0, min(maxs, val))
+                        ans.manual_score = round(val, 2)
                     except ValueError:
                         pass
+                # «لا جواب» في سؤالٍ مفتوحٍ بلا نقطةٍ مُدخَلة → 0 تلقائيّاً (مباشرةً).
+                auto_zero = is_open and ans.manual_score is None and raw_is_empty(ans.raw)
+                if auto_zero:
+                    ans.manual_score = 0.0
                 want = form.get(f"confirm_{ans.id}") == "on"
-                q = qmap.get(ans.quiz_question_id)
-                is_closed = q is not None and q.qtype in QUESTION_TYPES_CLOSED
                 eff = ans.manual_score if ans.manual_score is not None else ans.auto_score
-                # مصادقة فقط إن كان مغلقاً (نقطته آليّة) أو كانت له نقطة فعليّة.
+                # مصادقةٌ إن كان مغلقاً (نقطته آليّة) أو كانت له نقطة فعليّة (يدويّة أو 0 لِـ«لا جواب»).
                 ok = is_closed or eff is not None
-                ans.teacher_confirmed = want and ok
-                if want and ok:
+                ans.teacher_confirmed = (want or auto_zero) and ok
+                if ans.teacher_confirmed:
                     confirmed += 1
                 elif want and not ok:
                     refused += 1        # طُلبت المصادقة لكن لا نقطة للمفتوح — سنُخبر الأستاذ
@@ -813,9 +824,9 @@ async def quiz_grade_save(request: Request, quiz_id: int):
             "admin/_quiz_grade_rows.html",
             _ctx(request, quiz=quiz, questions=questions,
                  saved_confirmed=confirmed, saved_refused=refused))
-    dest = f"/admin/quizzes/{quiz_id}/grade"
+    dest = f"/admin/quizzes/{quiz_id}/grade?saved={confirmed}"
     if refused:
-        dest += f"?warn={refused}"
+        dest += f"&warn={refused}"
     return RedirectResponse(dest, status_code=303)
 
 
