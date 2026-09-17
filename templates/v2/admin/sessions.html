@@ -27,7 +27,9 @@
   <tbody>
   {% for r in rows %}
     <tr>
-      <td>{{ r.s.quiz.title if r.s.quiz else '—' }}</td>
+      <td>{{ r.s.quiz.title if r.s.quiz else '—' }}
+        {% if r.dup %}<span class="badge bg-orange-lt ms-1" title="لهذا التقويم والفوج {{ r.dup_count }} جلسات — يمكن دمجها في واحدة">مكرّرة ×{{ r.dup_count }}</span>{% endif %}
+      </td>
       <td>{{ r.s.group_name }}</td>
       <td>
         {% if r.s.status == 'open' %}<span class="badge bg-green">مفتوحة</span>

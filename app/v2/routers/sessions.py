@@ -53,9 +53,10 @@ async def sessions_list(request: Request):
     for sess in sessions:
         subs = sum(1 for p in sess.participants if p.submitted_at)
         present = sum(1 for p in sess.participants if p.present)
+        n_fam = fam[(sess.quiz_id, sess.group_name)]
         rows.append({"s": sess, "subs": subs, "present": present,
                      "total": len(sess.participants),
-                     "dup": fam[(sess.quiz_id, sess.group_name)] > 1})
+                     "dup": n_fam > 1, "dup_count": n_fam})
     return templates.TemplateResponse(
         "admin/sessions.html", _ctx(request, rows=rows, quizzes=quizzes, groups=groups,
                                     error=request.query_params.get("error"),
