@@ -1,4 +1,6 @@
 <div id="gradeRows">
+{% if saved_refused %}<div class="alert alert-warning">⚠ لم تُحفَظ مصادقةُ {{ saved_refused }} جوابٍ مفتوح لأنّه بلا نقطة — اكتب النقطة في خانتها أوّلاً ثمّ صادِق. (النقطة تقبل الفاصلة، مثل 3٫5 أو 3.5.)</div>{% endif %}
+{% if saved_confirmed %}<div class="alert alert-success">✓ صودق على {{ saved_confirmed }} جواب — دخلت التقارير.</div>{% endif %}
 {% for item in questions %}
   <div class="card mb-3">
     <div class="card-header">
@@ -20,8 +22,9 @@
               <span class="badge {{ 'bg-green' if (a.effective is not none and a.effective >= item.q.max_score) else ('bg-yellow' if a.effective else 'bg-red') }}">
                 {{ a.effective if a.effective is not none else 0 }}/{{ item.q.max_score }}</span>
             {% else %}
-              <input type="number" step="0.25" min="0" max="{{ item.q.max_score }}"
+              <input type="text" inputmode="decimal" dir="ltr"
                      name="score_{{ a.ans.id }}" class="form-control form-control-sm"
+                     placeholder="/{{ item.q.max_score }}" title="النقطة على {{ item.q.max_score }} — تقبل الفاصلة (3٫5 أو 3.5)"
                      value="{{ a.effective if a.effective is not none else '' }}">
             {% endif %}
           </td>

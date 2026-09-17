@@ -139,3 +139,22 @@ def test_htmx_save_returns_rows_partial(monkeypatch):
         return captured["name"]
 
     assert asyncio.run(run()) == "admin/_quiz_grade_rows.html"
+
+
+def test_confirm_open_with_comma_score_persists(monkeypatch):
+    """السبب الجذريّ للشكوى: نقطةٌ بفاصلةٍ عربيّة/فرنسيّة (3,5) كانت تُرفَض فلا تُحفَظ
+    ولا تُصادَق. الآن تُقبَل، فتُحفَظ النقطة وتثبت المصادقة وتدخل التقارير."""
+    build = _setup(monkeypatch)
+
+    async def run():
+        eng, S, admin_mod, qid, aid = await build()
+        form = FormData([("shown", str(aid)), (f"score_{aid}", "3,5"), (f"confirm_{aid}", "on")])
+        await admin_mod.quiz_grade_save(_Req(form), qid)
+        async with S() as s:
+            ans = await s.get(Answer, aid)
+            state = (ans.teacher_confirmed, ans.manual_score)
+        await eng.dispose()
+        return state
+
+    confirmed, score = asyncio.run(run())
+    assert confirmed is True and score == 3.5     # حُفظت النقطة وثبتت المصادقة

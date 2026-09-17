@@ -9,6 +9,7 @@
   لا يدخل الحساب والتقارير (والذكاء الاصطناعي) إلّا جوابٌ <b>مصادَق عليه</b>.</p>
 
 {% if ai_msg %}<div class="alert alert-info">{{ ai_msg }}</div>{% endif %}
+{% if warn %}<div class="alert alert-warning">⚠ لم تُحفَظ مصادقةُ {{ warn }} جوابٍ مفتوح لأنّه بلا نقطة — اكتب النقطة أوّلاً ثمّ صادِق.</div>{% endif %}
 
 {% if rubric %}
 <details class="card mb-3" {% if not online %}open{% endif %}>
@@ -54,7 +55,7 @@ function markAllGradable() {
   document.querySelectorAll('#gradeRows tbody tr').forEach(function (tr) {
     var cb = tr.querySelector('input[type=checkbox][name^="confirm_"]');
     if (!cb) return;
-    var score = tr.querySelector('input[type=number][name^="score_"]');
+    var score = tr.querySelector('input[name^="score_"]');   // مغلقٌ = بلا حقل نقطة
     if (!score || (score.value || '').trim() !== '') cb.checked = true;
   });
 }

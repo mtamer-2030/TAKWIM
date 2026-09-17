@@ -704,7 +704,8 @@ async def quiz_grade_page(request: Request, quiz_id: int):
         _ctx(request, quiz=quiz, questions=questions, rubric=rubric,
              competencies=list(COMPETENCIES.items()),
              online=ollama_available(),
-             ai_msg=request.query_params.get("ai")))
+             ai_msg=request.query_params.get("ai"),
+             warn=request.query_params.get("warn")))
 
 
 @router.post("/quizzes/{quiz_id}/grade/ai")
@@ -774,6 +775,8 @@ async def quiz_grade_save(request: Request, quiz_id: int):
             shown.add(int(v))
         except (TypeError, ValueError):
             pass
+    confirmed = 0
+    refused = 0                 # مصادقةٌ طُلبت لكن رُفضت (مفتوحٌ بلا نقطة) — نُبلِّغ عنها
     async with AsyncSessionLocal() as s:
         if shown:
             answers = (await s.execute(
@@ -787,7 +790,8 @@ async def quiz_grade_save(request: Request, quiz_id: int):
                 raw_score = form.get(f"score_{ans.id}")
                 if raw_score not in (None, ""):
                     try:
-                        ans.manual_score = float(raw_score)
+                        # متسامحٌ مع الفاصلة العربيّة/الفرنسيّة (3,5) والمسافات.
+                        ans.manual_score = float(str(raw_score).replace(",", ".").strip())
                     except ValueError:
                         pass
                 want = form.get(f"confirm_{ans.id}") == "on"
@@ -795,14 +799,24 @@ async def quiz_grade_save(request: Request, quiz_id: int):
                 is_closed = q is not None and q.qtype in QUESTION_TYPES_CLOSED
                 eff = ans.manual_score if ans.manual_score is not None else ans.auto_score
                 # مصادقة فقط إن كان مغلقاً (نقطته آليّة) أو كانت له نقطة فعليّة.
-                ans.teacher_confirmed = want and (is_closed or eff is not None)
+                ok = is_closed or eff is not None
+                ans.teacher_confirmed = want and ok
+                if want and ok:
+                    confirmed += 1
+                elif want and not ok:
+                    refused += 1        # طُلبت المصادقة لكن لا نقطة للمفتوح — سنُخبر الأستاذ
             await s.commit()
     if request.headers.get("HX-Request"):
         async with AsyncSessionLocal() as s:
             quiz, questions = await _grade_view(s, quiz_id)
         return templates.TemplateResponse(
-            "admin/_quiz_grade_rows.html", _ctx(request, quiz=quiz, questions=questions))
-    return RedirectResponse(f"/admin/quizzes/{quiz_id}/grade", status_code=303)
+            "admin/_quiz_grade_rows.html",
+            _ctx(request, quiz=quiz, questions=questions,
+                 saved_confirmed=confirmed, saved_refused=refused))
+    dest = f"/admin/quizzes/{quiz_id}/grade"
+    if refused:
+        dest += f"?warn={refused}"
+    return RedirectResponse(dest, status_code=303)
 
 
 def _skill_to_competency() -> dict:
