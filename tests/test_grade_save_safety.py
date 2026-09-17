@@ -217,3 +217,32 @@ def test_score_clamped_to_max_and_rounded(monkeypatch):
 
     score, confirmed = asyncio.run(run())
     assert score == 4.0 and confirmed is True
+
+
+def test_read_form_allows_more_than_1000_fields():
+    """السبب الجذريّ لـ«Too many fields»: حدّ Starlette الافتراضيّ 1000 حقل يرفض تصحيح
+    قسمٍ كامل. read_form يرفع الحدّ فيقبل آلاف الحقول."""
+    import asyncio
+    from starlette.requests import Request
+    from app.v2.web import read_form
+
+    async def run():
+        # نبني طلباً حقيقيّاً (لا مُلفَّقاً) بجسمٍ urlencoded فيه 3000 حقل.
+        body = "&".join(f"f{i}=v{i}" for i in range(3000)).encode("utf-8")
+        sent = False
+
+        async def receive():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        scope = {"type": "http", "method": "POST",
+                 "headers": [(b"content-type", b"application/x-www-form-urlencoded"),
+                             (b"content-length", str(len(body)).encode())]}
+        req = Request(scope, receive)
+        form = await read_form(req)
+        return len(form)
+
+    assert asyncio.run(run()) == 3000     # لم يُرفَض رغم تجاوز 1000

@@ -29,7 +29,7 @@ from .. import proctor
 from ..constants import DISPLAY_TYPES, QUESTION_TYPES_CLOSED, QUESTION_TYPES_OPEN
 from ..services.analytics import generate_student_skill_profile
 from ..services.quizzes import grade_answer
-from .web import STUDENT_COOKIE, current_student_id, issue_student_cookie, templates
+from .web import STUDENT_COOKIE, current_student_id, issue_student_cookie, read_form, templates
 
 router = APIRouter(prefix="/student")
 
@@ -340,7 +340,7 @@ async def submit_quiz(request: Request, quiz_id: int):
     if student is None:
         return RedirectResponse("/student", status_code=303)
     from datetime import datetime
-    form = await request.form()
+    form = await read_form(request)
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
             select(Quiz).where(Quiz.id == quiz_id)
@@ -423,7 +423,7 @@ async def save_quiz_draft(request: Request, quiz_id: int):
     student = await _load_student(request)
     if student is None:
         return HTMLResponse("", status_code=401)
-    form = await request.form()
+    form = await read_form(request)
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
             select(Quiz).where(Quiz.id == quiz_id)

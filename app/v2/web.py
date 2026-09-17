@@ -87,6 +87,16 @@ def _ctx(request: Request, **extra) -> dict:
     return {"request": request, **extra}
 
 
+async def read_form(request: Request):
+    """يقرأ نموذجاً مع رفع حدّ عدد الحقول: تصحيحُ قسمٍ كامل (تلاميذ × أسئلة × ٣ حقول)
+    قد يتجاوز حدّ Starlette الافتراضيّ (1000) فيُرفَض الإرسال بـ«Too many fields».
+    نتسامح مع نماذج الاختبار المُلفَّقة التي لا تقبل وسائط (fallback عبر TypeError)."""
+    try:
+        return await request.form(max_fields=100_000, max_files=1000)
+    except TypeError:
+        return await request.form()
+
+
 def issue_student_cookie(student_id: int) -> str:
     """قيمة كوكي تلميذ موقَّعة تحمل معرّفه — تُوضَع في كوكي pt_student."""
     return sign(str(student_id))

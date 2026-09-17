@@ -25,7 +25,7 @@ from ...models import (Answer, Level, Quiz, QuizQuestion, QuizSession,
 from ...services.quizzes import (QuizImportError, attach_answer_elements, build_quiz,
                                  heuristic_quiz_from_text, normalize_quiz_json,
                                  raw_is_empty, readable_answer, resolve_skill_id)
-from ..web import _ctx, require_admin, skill_id_map, templates
+from ..web import _ctx, read_form, require_admin, skill_id_map, templates
 
 router = APIRouter()
 
@@ -250,7 +250,7 @@ async def quizzes_import_ai(request: Request):
     وإلّا يجرّب المحرّك المحلّي. تدهور لطيف: عند التعذّر يبقى التحليل القاعديّ ويُعرَض السبب."""
     if (g := require_admin(request)):
         return g
-    form = await request.form()
+    form = await read_form(request)
     raw = form.get("raw_text") or ""
     answers_text = form.get("answers_text") or ""
     level_id = (form.get("level_id") or "").strip()
@@ -386,7 +386,7 @@ async def quizzes_import_save(request: Request):
     """يحفظ التقويم بعد مراجعة الأستاذ لأسئلته المستخرَجة وتحريرها (وتأشير الصواب)."""
     if (g := require_admin(request)):
         return g
-    form = await request.form()
+    form = await read_form(request)
     level_id = (form.get("level_id") or "").strip()
     group_name = form.get("group_name") or ""
     lid = int(level_id) if level_id.isdigit() else None
@@ -562,7 +562,7 @@ async def quiz_edit_save(request: Request, quiz_id: int):
     if (g := require_admin(request)):
         return g
     from sqlalchemy.orm import selectinload
-    form = await request.form()
+    form = await read_form(request)
     async with AsyncSessionLocal() as s:
         quiz = (await s.execute(
             select(Quiz).where(Quiz.id == quiz_id)
@@ -770,7 +770,9 @@ async def quiz_grade_save(request: Request, quiz_id: int):
     ولا يُصادَق على جوابٍ مفتوح بلا نقطة (تفادي صفر صامت)."""
     if (g := require_admin(request)):
         return g
-    form = await request.form()
+    # قسمٌ كامل × أسئلة × (shown+score+confirm) قد يتجاوز حدّ Starlette الافتراضيّ (1000
+    # حقل) فيُرفَض التصحيح كلّه بـ«Too many fields». نرفع الحدّ ليتّسع لأكبر قسم.
+    form = await read_form(request)
     shown: set[int] = set()
     for v in form.getlist("shown"):
         try:
@@ -853,7 +855,7 @@ async def quiz_grade_rubric(request: Request, quiz_id: int):
     يصادق الأستاذ. عناصر الإجابة = مؤشّرات النجاح (تخزينٌ موحَّد)."""
     if (g := require_admin(request)):
         return g
-    form = await request.form()
+    form = await read_form(request)
     try:
         qid = int(form.get("question_id") or 0)
     except (TypeError, ValueError):

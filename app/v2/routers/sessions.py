@@ -17,7 +17,7 @@ from ...database import AsyncSessionLocal
 from ...models import (Answer, Level, Quiz, QuizQuestion, QuizSession,
                        SessionStudent, Student)
 from ...services.quizzes import grade_answer, raw_is_empty
-from ..web import _ctx, require_admin, templates
+from ..web import _ctx, read_form, require_admin, templates
 
 router = APIRouter()
 
@@ -122,7 +122,7 @@ async def session_attendance(request: Request, sid: int):
     """يحفظ الحضور: المؤشَّرون حاضرون، والباقون غائبون (تُرفض رموزهم في الجلسة)."""
     if (g := require_admin(request)):
         return g
-    form = await request.form()
+    form = await read_form(request)
     async with AsyncSessionLocal() as s:
         parts = (await s.execute(
             select(SessionStudent).where(SessionStudent.session_id == sid))).scalars().all()
