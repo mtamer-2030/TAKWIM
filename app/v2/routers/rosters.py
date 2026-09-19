@@ -10,13 +10,14 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 
 from ...codes import make_login_code
 from ...constants import level_of_class_label
 from ...database import AsyncSessionLocal
 from ...importer import ImporterError, extract_text, parse_students_excel
-from ...models import Axis, Level, PhilosophicalText, Student, TextType
+from ...models import (Answer, Axis, Level, PhilosophicalText, SessionStudent,
+                       Student, StudentReport, TextType)
 from ..web import _ctx, require_admin, templates
 
 router = APIRouter()
@@ -157,7 +158,8 @@ async def rosters(request: Request):
              updated=request.query_params.get("updated"),
              new_code=request.query_params.get("new_code"),
              new_name=request.query_params.get("new_name"),
-             add_error=request.query_params.get("add_error")))
+             add_error=request.query_params.get("add_error"),
+             deleted=request.query_params.get("deleted")))
 
 
 @router.post("/students/add")
@@ -194,6 +196,26 @@ async def student_add(request: Request, full_name: str = Form(...),
         await s.commit()
     return RedirectResponse(
         f"/admin/rosters?new_code={quote(code)}&new_name={quote(name)}", status_code=303)
+
+
+@router.post("/students/{student_id}/delete")
+async def student_delete(request: Request, student_id: int):
+    """حذف تلميذٍ نهائيّاً (لإزالة مكرَّرٍ مثلاً) وكلّ أثره: أجوبته ونقطه وتقاريره
+    وسجلّات حضوره. نحذف الأبناء صراحةً ثمّ التلميذ (لا نعتمد على تفعيل المفاتيح
+    الأجنبيّة). لا رجعة."""
+    if (g := require_admin(request)):
+        return g
+    name = ""
+    async with AsyncSessionLocal() as s:
+        st = await s.get(Student, student_id)
+        if st is not None:
+            name = st.full_name
+            await s.execute(sa_delete(Answer).where(Answer.student_id == student_id))
+            await s.execute(sa_delete(SessionStudent).where(SessionStudent.student_id == student_id))
+            await s.execute(sa_delete(StudentReport).where(StudentReport.student_id == student_id))
+            await s.execute(sa_delete(Student).where(Student.id == student_id))
+            await s.commit()
+    return RedirectResponse("/admin/rosters?deleted=" + quote(name), status_code=303)
 
 
 def _read_backup_students(data: bytes):

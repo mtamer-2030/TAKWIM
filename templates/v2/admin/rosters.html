@@ -18,6 +18,7 @@
 </div>
 {% endif %}
 {% if add_error %}<div class="alert alert-danger">{{ add_error }}</div>{% endif %}
+{% if deleted %}<div class="alert alert-warning">حُذف التلميذ <b>{{ deleted }}</b> وكلّ أثره نهائيّاً.</div>{% endif %}
 
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">➕ إضافة تلميذ جديد (مُحوَّل / غير مسجَّل)</h3>
@@ -52,7 +53,7 @@
        placeholder="بحث بالاسم أو رمز مسار أو القسم…" autocomplete="off">
 <div class="card"><div class="table-responsive">
 <table class="table" id="rosterTable">
-  <thead><tr><th>الاسم الكامل</th><th>رمز مسار</th><th>رمز الدخول</th><th>المستوى</th><th>القسم</th></tr></thead>
+  <thead><tr><th>الاسم الكامل</th><th>رمز مسار</th><th>رمز الدخول</th><th>المستوى</th><th>القسم</th><th></th></tr></thead>
   <tbody>
   {% for st in students %}
     <tr>
@@ -61,9 +62,15 @@
       <td class="text-secondary">{{ st.login_code or '—' }}</td>
       <td>{{ levels.get(st.level_id, '—') }}</td>
       <td>{{ st.group_name or '—' }}</td>
+      <td class="text-end" style="white-space:nowrap">
+        <a class="btn btn-sm btn-outline-primary" href="/admin/gradebook/student/{{ st.id }}">📈 التقدّم</a>
+        <form method="post" action="/admin/students/{{ st.id }}/delete" style="display:inline"
+              onsubmit="return confirm('حذف التلميذ «{{ st.full_name }}» نهائيّاً وكلّ أجوبته ونقطه؟\nاستعمله لحذف تلميذٍ مكرّر. لا رجعة.');">
+          <button class="btn btn-sm btn-outline-danger">🗑 حذف</button></form>
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="5" class="text-secondary">لا تلاميذ بعد. استورد لائحة Excel.</td></tr>
+    <tr><td colspan="6" class="text-secondary">لا تلاميذ بعد. استورد لائحة Excel.</td></tr>
   {% endfor %}
   </tbody>
 </table>

@@ -106,8 +106,16 @@ async def gradebook_student(request: Request, student_id: int):
     if data["student"] is None:
         return HTMLResponse("التلميذ غير موجود", status_code=404)
     import json as _json
+    vals = [e["pct"] for e in data["evaluations"]]
+    # المعدّل التراكميّ: متوسّطٌ جارٍ حتى كلّ تقويم (يُظهر مسار التقدّم لا التذبذب اللحظيّ).
+    _run: list[float] = []
+    cumulative = []
+    for v in vals:
+        if v is not None:
+            _run.append(v)
+        cumulative.append(round(sum(_run) / len(_run), 1) if _run else None)
     chart = {"labels": [e["date"] + " · " + e["title"][:18] for e in data["evaluations"]],
-             "values": [e["pct"] for e in data["evaluations"]]}
+             "values": vals, "cumulative": cumulative}
     skills = data["skills"]
     radar = {"labels": list(skills.keys()),
              "values": [round((skills[k]["avg"] or 0) * 100, 1) for k in skills]}
