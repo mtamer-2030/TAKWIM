@@ -21,6 +21,9 @@ class LocalAI:
     base_url: str = "http://localhost:11434"
     model: str = "qwen2.5:3b-instruct"
     timeout: int = 300
+    # ضبطُ الأداء (تسريع الاستجابة على العتاد الضعيف):
+    num_ctx: int = 2048          # نافذة سياقٍ صغيرة تُسرّع التقييم وتقلّل VRAM
+    num_gpu: int | None = None   # طبقاتٌ على البطاقة (None=يقرّر Ollama؛ ارفعها لدفع كلّ الطبقات للـGPU)
 
 
 @dataclass
@@ -106,11 +109,15 @@ def load_settings() -> Settings:
     # سرّ التوقيع: من config.ini إن وُجد، وإلّا سرّ مُولَّد محفوظ.
     s.secret_key = s.secret_key or _load_or_create_secret()
     if cp.has_section("local_ai"):
+        raw_ngpu = (cp.get("local_ai", "num_gpu", fallback="") or "").strip()
+        num_gpu = int(raw_ngpu) if raw_ngpu.lstrip("-").isdigit() else None
         s.local_ai = LocalAI(
             enabled=cp.getboolean("local_ai", "enabled", fallback=True),
             base_url=cp.get("local_ai", "base_url", fallback="http://localhost:11434"),
             model=cp.get("local_ai", "model", fallback="qwen2.5:3b-instruct"),
             timeout=cp.getint("local_ai", "timeout", fallback=300),
+            num_ctx=cp.getint("local_ai", "num_ctx", fallback=2048),
+            num_gpu=num_gpu,
         )
     # المفتاح السحابيّ: من config.ini أو من متغيّر البيئة ANTHROPIC_API_KEY.
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()

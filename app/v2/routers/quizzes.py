@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import case, delete as sa_delete, func, select
 
 from ...ai_feedback import (AIUnavailable, extract_quiz_json, ollama_available,
-                            suggest_open_score)
+                            suggest_open_score, warm_up)
 from ...cloud_ai import CloudAIUnavailable, cloud_available, extract_quiz_cloud
 from ...constants import (COMPETENCIES, COMPETENCY_TO_SKILL, DISPLAY_TYPES, KINDS,
                           QUESTION_TYPES_CLOSED, QUESTION_TYPES_OPEN)
@@ -700,11 +700,15 @@ async def quiz_grade_page(request: Request, quiz_id: int):
             return HTMLResponse("التقويم غير موجود", status_code=404)
         # محرّر المعايير للأسئلة المفتوحة فقط (الكفاية + مؤشّرات النجاح للتصحيح الآليّ).
         rubric = [await _rubric_item(s, it["q"]) for it in questions if not it["closed"]]
+    online = ollama_available()
+    if online and any(not it["closed"] for it in questions):
+        # تحميلٌ مسبقٌ للنموذج في الخلفيّة (لا يوقف عرض الصفحة) فيكون أوّلُ اقتراحٍ سريعاً.
+        asyncio.create_task(asyncio.to_thread(warm_up))
     return templates.TemplateResponse(
         "admin/quiz_grade.html",
         _ctx(request, quiz=quiz, questions=questions, rubric=rubric,
              competencies=list(COMPETENCIES.items()),
-             online=ollama_available(),
+             online=online,
              ai_msg=request.query_params.get("ai"),
              warn=request.query_params.get("warn"),
              saved=request.query_params.get("saved")))

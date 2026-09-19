@@ -103,9 +103,13 @@ def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None,
         import httpx
     except ImportError as e:  # pragma: no cover
         raise AIUnavailable(OFFLINE_MESSAGE) from e
-    options = {"num_predict": num_predict, "temperature": 0.3}
-    if num_ctx:
-        options["num_ctx"] = num_ctx
+    # نافذة السياق: قيمةُ النداء إن مُرِّرت (استخراجٌ طويل)، وإلّا الصغيرةُ من الإعداد
+    # (num_ctx كبيرة تبطّئ التقييم وتلتهم VRAM بلا داعٍ لنداءٍ قصير كاقتراح النقطة).
+    options = {"num_predict": num_predict, "temperature": 0.3,
+               "num_ctx": num_ctx or getattr(cfg, "num_ctx", 2048)}
+    # دفعُ كلّ الطبقات للبطاقة (تسريعٌ كبير على العتاد الضعيف إن هُيّئ في config.ini).
+    if getattr(cfg, "num_gpu", None) is not None:
+        options["num_gpu"] = cfg.num_gpu
     payload = {"model": cfg.model, "system": system_prompt,
                "prompt": user_prompt, "stream": False,
                # يُبقي النموذج محمّلاً في الذاكرة بين التلاميذ (تسريع كبير)،
@@ -151,10 +155,19 @@ def _generate(system_prompt: str, user_prompt: str, fmt: str | None = None,
 def ping_generate() -> tuple[bool, str]:
     """اختبار سريع: يطلب توليداً قصيراً جداً ويعيد (نجاح، رسالة/نصّ) للتشخيص."""
     try:
-        out = _generate("أجب بكلمة واحدة.", "قل: جاهز")
+        out = _generate("أجب بكلمة واحدة.", "قل: جاهز", num_predict=8, num_ctx=512)
         return True, out[:120]
     except AIUnavailable as e:
         return False, str(e)
+
+
+def warm_up() -> None:
+    """يُحمّل النموذج مسبقاً في ذاكرة البطاقة (نداءٌ صغير جدّاً) فلا يُبطئ التحميلُ الباردُ
+    أوّلَ اقتراحٍ للأستاذ. أفضلُ جهدٍ صامت — يُستدعى عند فتح شاشة التصحيح."""
+    try:
+        _generate("جاهز؟", "نعم", num_predict=1, num_ctx=256, timeout=60)
+    except AIUnavailable:
+        pass
 
 
 def generate_student_plan(profile: dict) -> str:
@@ -195,9 +208,12 @@ def suggest_open_score(question_prompt: str, guidance: str, answer_text: str,
     المخرَج مقيَّد بمخطّط JSON (لا تفكيك regex هشّ يخلط سقفاً بنقطة).
     """
     import json
-    raw = _generate(SYSTEM_CORRECTION,
-                    _build_correction_prompt(question_prompt, guidance, answer_text, max_score),
-                    fmt="json")
+    # تسريعٌ: اقتراحُ النقطة مخرَجُه سطرُ JSON قصير — سقفُ توليدٍ صغير (لا 350) ونافذةُ
+    # سياقٍ صغيرة ومُدخَلٌ مُقلَّم، فتقلّ مدّةُ التوليد كثيراً على المعالج/البطاقة الضعيفة.
+    prompt = _build_correction_prompt(question_prompt[:600], (guidance or "")[:800],
+                                      (answer_text or "")[:1500], max_score)
+    raw = _generate(SYSTEM_CORRECTION, prompt, fmt="json",
+                    num_predict=96, num_ctx=1536, timeout=90)
     score, note = 0.0, ""
     try:
         data = json.loads(raw)
