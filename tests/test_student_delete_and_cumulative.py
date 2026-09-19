@@ -96,3 +96,50 @@ def test_student_gradebook_chart_has_cumulative(monkeypatch):
     chart = json.loads(cap["chart"])
     assert chart["values"] == [60.0, 80.0]
     assert chart["cumulative"] == [60.0, 70.0]     # متوسّطٌ جارٍ
+
+
+def test_students_merge_moves_progress_and_keeps_massar(monkeypatch):
+    """السيناريو الحقيقيّ: سجلٌّ يدويٌّ بلا رقم مسار وفيه الإنجازات + سجلٌّ رسميٌّ
+    برقم مسار وفارغ. الدمج ينقل الإنجازات للرسميّ ويحذف اليدويّ — بلا فقد."""
+    from app.v2.routers import rosters as admin_mod
+
+    async def go():
+        eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with eng.begin() as c:
+            await c.run_sync(Base.metadata.create_all)
+        S = async_sessionmaker(eng, expire_on_commit=False)
+        monkeypatch.setattr(admin_mod, "AsyncSessionLocal", S)
+        async with S() as s:
+            lv = Level(name="ج", code="TC"); s.add(lv); await s.flush()
+            manual = Student(full_name="خالد", level_id=lv.id, group_name="TC1",
+                             massar_code=None, login_code="TC1-09-AB", active=True)
+            official = Student(full_name="خالد", level_id=lv.id, group_name="TC1",
+                               massar_code="M123", login_code="TC1-01-ZZ", active=True)
+            s.add_all([manual, official]); await s.flush()
+            quiz = Quiz(title="ت", kind="exam", level_id=lv.id); s.add(quiz); await s.flush()
+            q = QuizQuestion(quiz_id=quiz.id, qtype="long_text", prompt="س", payload={},
+                             max_score=4, position=0); s.add(q); await s.flush()
+            sess = QuizSession(quiz_id=quiz.id, group_name="TC1", status="closed"); s.add(sess); await s.flush()
+            # إنجازاتٌ على السجلّ اليدويّ (المصدر)
+            s.add(Answer(quiz_question_id=q.id, student_id=manual.id, raw={"text": "جواب"},
+                         manual_score=3, teacher_confirmed=True, submitted=True))
+            s.add(SessionStudent(session_id=sess.id, student_id=manual.id, present=True))
+            s.add(StudentReport(student_id=manual.id, skill_profile={}, ai_intervention_plan="خطة"))
+            await s.commit()
+            src_id, dst_id, qid = manual.id, official.id, q.id
+        resp = await admin_mod.students_merge(_admin_req(), source_id=src_id, target_id=dst_id)
+        async with S() as s:
+            students = (await s.execute(select(Student))).scalars().all()
+            ans = (await s.execute(select(Answer))).scalars().all()
+            rep = (await s.execute(select(StudentReport))).scalars().all()
+            dst = await s.get(Student, dst_id)
+        await eng.dispose()
+        return resp, students, ans, rep, dst, dst_id
+
+    resp, students, ans, rep, dst, dst_id = asyncio.run(go())
+    assert getattr(resp, "status_code", None) == 303 and "merged_student=" in resp.headers["location"]
+    assert len(students) == 1 and students[0].id == dst_id     # بقي الرسميّ فقط
+    assert len(ans) == 1 and ans[0].student_id == dst_id       # الجواب انتقل للرسميّ
+    assert ans[0].manual_score == 3 and ans[0].teacher_confirmed is True
+    assert len(rep) == 1 and rep[0].student_id == dst_id       # التقرير انتقل
+    assert dst.massar_code == "M123"                            # رقم مسار الرسميّ محفوظ

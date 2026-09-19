@@ -159,7 +159,11 @@ async def rosters(request: Request):
              new_code=request.query_params.get("new_code"),
              new_name=request.query_params.get("new_name"),
              add_error=request.query_params.get("add_error"),
-             deleted=request.query_params.get("deleted")))
+             deleted=request.query_params.get("deleted"),
+             merged_student=request.query_params.get("merged_student"),
+             merged_from=request.query_params.get("from"),
+             merged_moved=request.query_params.get("moved"),
+             merge_error=request.query_params.get("merge_error")))
 
 
 @router.post("/students/add")
@@ -216,6 +220,96 @@ async def student_delete(request: Request, student_id: int):
             await s.execute(sa_delete(Student).where(Student.id == student_id))
             await s.commit()
     return RedirectResponse("/admin/rosters?deleted=" + quote(name), status_code=303)
+
+
+@router.post("/students/merge")
+async def students_merge(request: Request, source_id: int = Form(...),
+                         target_id: int = Form(...)):
+    """يدمج سجلَّي تلميذٍ مكرَّرَين بلا فقدِ إنجازات: يَنقل كلّ أجوبة/حضور/تقارير
+    **المصدر** إلى **الهدف** (بلا تكرارٍ يخالف قيود التفرّد)، ثمّ يحذف المصدر الفارغ.
+
+    الحالة النموذجيّة: تلميذٌ أُضيف يدويّاً بلا رقم مسار وأنجز تقاويم، ثمّ استُوردت
+    اللائحة فأُنشئ له سجلٌّ رسميٌّ برقم مسار (فارغ). ادمج القديم (المصدر) في الرسميّ
+    (الهدف) فتنتقل إنجازاته ويبقى رقم مساره. لا رجعة في حذف المصدر بعد النقل."""
+    if (g := require_admin(request)):
+        return g
+    if source_id == target_id:
+        return RedirectResponse(
+            "/admin/rosters?merge_error=" + quote("اختر تلميذَين مختلفَين للدمج."),
+            status_code=303)
+    moved = 0
+    src_name = tgt_name = ""
+    async with AsyncSessionLocal() as s:
+        src = await s.get(Student, source_id)
+        dst = await s.get(Student, target_id)
+        if src is None or dst is None:
+            return RedirectResponse(
+                "/admin/rosters?merge_error=" + quote("أحد التلميذَين غير موجود."),
+                status_code=303)
+        src_name, tgt_name = src.full_name, dst.full_name
+
+        # (١) الأجوبة — مفتاح السؤال (تقويم/تحليل/مقال) فريدٌ لكلّ تلميذ.
+        def _akey(a):
+            return (a.quiz_question_id, a.analysis_question_id, a.essay_id)
+        dst_ans = {_akey(a): a for a in (await s.execute(
+            select(Answer).where(Answer.student_id == target_id))).scalars()}
+        for a in (await s.execute(
+                select(Answer).where(Answer.student_id == source_id))).scalars().all():
+            keep = dst_ans.get(_akey(a))
+            if keep is None:
+                a.student_id = target_id
+                dst_ans[_akey(a)] = a
+                moved += 1
+            else:
+                # عند تعارضٍ نادر: نُبقي الأنفع (المُسلَّم/ذو النقطة) ونحذف الآخر.
+                s_eff = a.manual_score if a.manual_score is not None else a.auto_score
+                t_eff = keep.manual_score if keep.manual_score is not None else keep.auto_score
+                src_better = (a.submitted and not keep.submitted) or (t_eff is None and s_eff is not None)
+                if src_better:
+                    await s.delete(keep)
+                    await s.flush()               # ثبِّت الحذف قبل إعادة الإسناد (قيد التفرّد)
+                    a.student_id = target_id
+                    dst_ans[_akey(a)] = a
+                    moved += 1
+                else:
+                    await s.delete(a)
+                    await s.flush()
+
+        # (٢) الحضور في الجلسات — فريدٌ بـ(الجلسة، التلميذ).
+        dst_ss = {p.session_id: p for p in (await s.execute(
+            select(SessionStudent).where(SessionStudent.student_id == target_id))).scalars()}
+        for p in (await s.execute(
+                select(SessionStudent).where(SessionStudent.student_id == source_id))).scalars().all():
+            keep = dst_ss.get(p.session_id)
+            if keep is None:
+                p.student_id = target_id
+                dst_ss[p.session_id] = p
+            else:
+                keep.present = keep.present or p.present
+                if p.submitted_at and (keep.submitted_at is None or p.submitted_at < keep.submitted_at):
+                    keep.submitted_at = p.submitted_at
+                if not keep.device_token and p.device_token:
+                    keep.device_token = p.device_token
+                await s.delete(p)
+                await s.flush()
+
+        # (٣) التقارير — لا قيد تفرّد؛ تُعاد إسناداً كلّها.
+        for rep in (await s.execute(
+                select(StudentReport).where(StudentReport.student_id == source_id))).scalars().all():
+            rep.student_id = target_id
+
+        # الهدف يرث ما ينقص هويّته من المصدر (رمز مسار/دخول) إن كان أحدهما فارغاً.
+        if not dst.massar_code and src.massar_code:
+            dst.massar_code = src.massar_code
+        if not dst.login_code and src.login_code:
+            dst.login_code = src.login_code
+
+        await s.flush()
+        await s.delete(src)                       # المصدر صار فارغاً — يُحذف بأمان
+        await s.commit()
+    return RedirectResponse(
+        f"/admin/rosters?merged_student={quote(tgt_name)}&from={quote(src_name)}&moved={moved}",
+        status_code=303)
 
 
 def _read_backup_students(data: bytes):

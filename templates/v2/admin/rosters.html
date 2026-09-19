@@ -19,6 +19,28 @@
 {% endif %}
 {% if add_error %}<div class="alert alert-danger">{{ add_error }}</div>{% endif %}
 {% if deleted %}<div class="alert alert-warning">حُذف التلميذ <b>{{ deleted }}</b> وكلّ أثره نهائيّاً.</div>{% endif %}
+{% if merge_error %}<div class="alert alert-danger">{{ merge_error }}</div>{% endif %}
+{% if merged_student %}<div class="alert alert-success">تمّ الدمج: نُقلت إنجازاتُ <b>{{ merged_from }}</b> إلى <b>{{ merged_student }}</b> ({{ merged_moved }} جواب) وحُذف السجلّ المكرّر.</div>{% endif %}
+
+<div class="card mb-3" style="border-inline-start:4px solid #12489e"><div class="card-body">
+  <h3 class="card-title">🔗 دمج تلميذَين مكرّرَين (بلا فقدِ إنجازات)</h3>
+  <p class="text-secondary mb-2">إن أضفتَ تلميذاً يدويّاً بلا رقم مسار وأنجز تقاويم، ثمّ ظهر له سجلٌّ رسميٌّ عند تحديث اللائحة —
+    ادمج <b>المصدر</b> (القديم صاحب الإنجازات) في <b>الهدف</b> (الرسميّ برقم مسار): تنتقل كلّ أجوبته وتقدّمه، ثمّ يُحذف السجلّ الفارغ.</p>
+  <form method="post" action="/admin/students/merge" class="row g-2"
+        onsubmit="return confirm('دمج المصدر في الهدف؟ تنتقل إنجازاتُ المصدر إلى الهدف ثمّ يُحذف المصدر. لا رجعة.');">
+    <div class="col-md-5"><label class="form-label mb-0" style="font-size:.85rem">المصدر (يُحذف بعد النقل — عادةً بلا رقم مسار)</label>
+      <select name="source_id" class="form-select" required>
+        <option value="">— اختر المصدر —</option>
+        {% for st in students %}<option value="{{ st.id }}">{{ st.full_name }} · {{ st.group_name or '—' }} · {{ 'مسار: ' ~ st.massar_code if st.massar_code else 'بلا رقم مسار' }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-5"><label class="form-label mb-0" style="font-size:.85rem">الهدف (يبقى — عادةً الرسميّ برقم مسار)</label>
+      <select name="target_id" class="form-select" required>
+        <option value="">— اختر الهدف —</option>
+        {% for st in students %}<option value="{{ st.id }}">{{ st.full_name }} · {{ st.group_name or '—' }} · {{ 'مسار: ' ~ st.massar_code if st.massar_code else 'بلا رقم مسار' }}</option>{% endfor %}
+      </select></div>
+    <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100">دمج</button></div>
+  </form>
+</div></div>
 
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">➕ إضافة تلميذ جديد (مُحوَّل / غير مسجَّل)</h3>
