@@ -5,6 +5,7 @@
 
 {% if saved %}<div class="alert alert-success">{{ saved }}</div>{% endif %}
 {% if error %}<div class="alert alert-danger" style="white-space:pre-wrap">{{ error }}</div>{% endif %}
+{% if protected %}<div class="alert alert-warning">لم يُحذف التقويم: فيه <b>{{ protected }}</b> جواباً مُسلَّماً — حمايةً لنتائج التلاميذ التراكميّة. لإزالةٍ متعمّدة، امسح الأجوبة أوّلاً من صفحة التصحيح («حذف الأجوبة») ثمّ احذف التقويم الفارغ.</div>{% endif %}
 
 <div class="card mb-3"><div class="card-body">
   <h3 class="card-title">استيراد تقويم</h3>
@@ -80,7 +81,7 @@
         <a class="btn btn-sm btn-outline-success" href="/admin/quizzes/{{ quiz.id }}/edit">✎ تعديل</a>
         <a class="btn btn-sm btn-outline-primary" href="/admin/quizzes/{{ quiz.id }}/grade">تصحيح</a>
         <form method="post" action="/admin/quizzes/{{ quiz.id }}/delete" style="display:inline"
-              onsubmit="return confirm('حذف التقويم «{{ quiz.title }}» وكل أسئلته وأجوبته؟ لا رجعة.');">
+              onsubmit="return confirm('حذف التقويم «{{ quiz.title }}» وكلّ أسئلته؟\nملاحظة: إن كان فيه أجوبةٌ مُسلَّمة فلن يُحذف حمايةً لنتائج التلاميذ التراكميّة. لا رجعة.');">
           <button class="btn btn-sm btn-outline-danger">حذف</button>
         </form>
       </td>

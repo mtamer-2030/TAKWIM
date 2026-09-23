@@ -13,8 +13,8 @@ from sqlalchemy import func, select
 from ...ai_feedback import (AIUnavailable, generate_class_plan,
                             generate_student_plan, ollama_available, ping_generate)
 from ...database import AsyncSessionLocal
-from ...models import (Answer, ClassReport, QuizQuestion, QuizSession, Student,
-                       StudentReport)
+from ...models import (Answer, ClassReport, Quiz, QuizQuestion, QuizSession,
+                       Student, StudentReport)
 from ...services.analytics import (generate_class_report,
                                    generate_student_skill_profile)
 from ...settings import settings
@@ -188,6 +188,35 @@ async def _hardest_questions(s, group: str, limit: int = 6) -> list[dict]:
              "count": n} for p, r, n in rows if (r or 0) < 0.7]
 
 
+async def _class_progress(s, group: str) -> list[dict]:
+    """تطوّر معدّل القسم عبر التقاويم مرتّباً بالزمن (ذاكرةٌ تراكميّة، حتميّ بلا Ollama).
+
+    لكلّ تقويمٍ لهذا الفوج فيه أجوبةٌ مصادَقة: معدّلُه المئويّ، ومعه **متوسّطٌ جارٍ
+    تراكميّ** يُظهر مسار التطوّر. يُبنى من الأجوبة نفسها (هي الذاكرة)، فلا يضيع ولا
+    يحتاج توليداً ذكيّاً."""
+    eff = func.coalesce(Answer.manual_score, Answer.auto_score)
+    rows = (await s.execute(
+        select(Quiz.title, Quiz.created_at, func.avg(eff / QuizQuestion.max_score))
+        .join(QuizQuestion, QuizQuestion.quiz_id == Quiz.id)
+        .join(Answer, Answer.quiz_question_id == QuizQuestion.id)
+        .join(Student, Student.id == Answer.student_id)
+        .where(Student.group_name == group, Answer.teacher_confirmed.is_(True),
+               eff.is_not(None), QuizQuestion.max_score > 0)
+        .group_by(Quiz.id).order_by(Quiz.created_at))).all()
+    out: list[dict] = []
+    run: list[float] = []
+    for title, created, avg in rows:
+        pct = round((avg or 0) * 100, 1)
+        run.append(pct)
+        out.append({
+            "label": (title or "تقويم").strip()[:32],
+            "date": created.strftime("%Y-%m-%d") if created else "",
+            "pct": pct,
+            "cumulative": round(sum(run) / len(run), 1),
+        })
+    return out
+
+
 async def _ai_reports_data(s, group: str) -> dict:
     """يجمع تقارير التدخّل للقراءة/التصدير مع قراءةٍ بيداغوجيّة كاملة (بلا Ollama):
     خلاصةٌ سرديّة، تصنيف نوعيّ للمهارات، توزيع المستويات، القوّة/القصور، أصعب الأسئلة،
@@ -219,13 +248,14 @@ async def _ai_reports_data(s, group: str) -> dict:
                     "peda": sp, "narrative": student_narrative(sp, st.full_name)})
     cp = class_pedagogy(class_rep, overalls)
     hardest = await _hardest_questions(s, group)
+    progress = await _class_progress(s, group)
     return {
         "group": group,
         "class": {"skills": class_rep.get("skills") or {},
                   "weakest": class_rep.get("dominant_deficit"),
                   "plan": class_plan, "has_data": class_rep.get("has_data"),
                   "peda": cp, "narrative": class_narrative(cp, group),
-                  "hardest": hardest},
+                  "hardest": hardest, "progress": progress},
         "students": stu,
     }
 

@@ -170,14 +170,23 @@ def warm_up() -> None:
         pass
 
 
+# سقفُ توليدِ الخطط: خطّةٌ من ٣ نقاطٍ بالعربيّة قد تتجاوز ٣٥٠ توكناً فتُقتطع في منتصف
+# الجملة («تقارير مبتورة»). نرفعه إلى ٩٠٠ (المهلة ٣٠٠ث كافية، والتوليد مسائيٌّ دفعيّ)
+# مع نافذة سياقٍ مريحة، فتكتمل الخطّة دون بتر. لا يمسّ التصحيح المُعان (اقتراح النقطة).
+PLAN_NUM_PREDICT = 900
+PLAN_NUM_CTX = 3072
+
+
 def generate_student_plan(profile: dict) -> str:
     """خطة تدخّل علاجي لتلميذ (نصّ). يرفع AIUnavailable إن كان المحرك مغلقاً."""
-    return _generate(SYSTEM_STUDENT, build_student_prompt(profile))
+    return _generate(SYSTEM_STUDENT, build_student_prompt(profile),
+                     num_predict=PLAN_NUM_PREDICT, num_ctx=PLAN_NUM_CTX)
 
 
 def generate_class_plan(report: dict) -> str:
     """خطة دعم فصلي لقسم (نصّ). يرفع AIUnavailable إن كان المحرك مغلقاً."""
-    return _generate(SYSTEM_CLASS, build_class_prompt(report))
+    return _generate(SYSTEM_CLASS, build_class_prompt(report),
+                     num_predict=PLAN_NUM_PREDICT, num_ctx=PLAN_NUM_CTX)
 
 
 # ——————————————————— التصحيح المسائي المُعان (اقتراح لا حكم) ———————————————————

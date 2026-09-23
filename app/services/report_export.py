@@ -184,6 +184,14 @@ def ai_reports_docx(data: dict) -> bytes:
             p = doc.add_paragraph(f"• [{q.get('success')}٪] {q.get('prompt','')}")
             _rtl_para(p)
 
+    if cr.get("progress") and len(cr["progress"]) > 1:
+        _bold_para(doc, "تطوّر القسم عبر الزمن (ذاكرةٌ تراكميّة)")
+        for pr in cr["progress"]:
+            p = doc.add_paragraph(
+                f"• {pr.get('label','')} ({pr.get('date','')}): "
+                f"{pr.get('pct')}٪ — تراكميّاً {pr.get('cumulative')}٪")
+            _rtl_para(p)
+
     _bold_para(doc, "توصيات الدعم البيداغوجيّ")
     for r in (cp.get("recommendations") or []):
         p = doc.add_paragraph(); _rtl_para(p)
@@ -244,6 +252,11 @@ def ai_reports_txt(data: dict) -> str:
         lines.append("\nأصعب الأسئلة (الأخطاء الشائعة):")
         for q in cr["hardest"]:
             lines.append(f"  • [{q.get('success')}٪] {q.get('prompt','')}")
+    if cr.get("progress") and len(cr["progress"]) > 1:
+        lines.append("\nتطوّر القسم عبر الزمن (ذاكرةٌ تراكميّة):")
+        for pr in cr["progress"]:
+            lines.append(f"  • {pr.get('label','')} ({pr.get('date','')}): "
+                         f"{pr.get('pct')}٪ — تراكميّاً {pr.get('cumulative')}٪")
     lines.append("\nتوصيات الدعم:")
     for r in (cp.get("recommendations") or []):
         lines.append(f"  • {r['skill']}: {r.get('advice','')}")

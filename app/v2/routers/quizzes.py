@@ -75,7 +75,8 @@ async def quizzes(request: Request):
         "admin/quizzes.html",
         _ctx(request, rows=rows, levels=levels, groups=groups,
              error=request.query_params.get("error"),
-             saved=request.query_params.get("saved")))
+             saved=request.query_params.get("saved"),
+             protected=request.query_params.get("protected")))
 
 
 async def _save_normalized_quiz(normalized: dict, lid: int, group_name: str) -> tuple[str, int]:
@@ -617,10 +618,21 @@ async def quiz_edit_save(request: Request, quiz_id: int):
 
 @router.post("/quizzes/{quiz_id}/delete")
 async def quiz_delete(request: Request, quiz_id: int):
-    """حذف تقويم وكلّ أسئلته وأجوبته بالتتالي."""
+    """حذف تقويم وكلّ أسئلته.
+
+    حمايةُ الذاكرة التراكميّة: لا يُحذف تقويمٌ فيه أجوبةٌ مُسلَّمة، لأنّ حذفه يُتالى
+    (cascade) فيمحو إنجازات التلاميذ عليه ويُفقِد تطوّرهم من التقارير. لإزالةٍ متعمّدة
+    استعمل «حذف الأجوبة» في التصحيح أوّلاً ثمّ احذف التقويم الفارغ."""
     if (g := require_admin(request)):
         return g
     async with AsyncSessionLocal() as s:
+        submitted = await s.scalar(
+            select(func.count()).select_from(Answer)
+            .join(QuizQuestion, QuizQuestion.id == Answer.quiz_question_id)
+            .where(QuizQuestion.quiz_id == quiz_id, Answer.submitted.is_(True)))
+        if submitted:
+            return RedirectResponse(
+                f"/admin/quizzes?protected={submitted}", status_code=303)
         await s.execute(sa_delete(Quiz).where(Quiz.id == quiz_id))
         await s.commit()
     return RedirectResponse("/admin/quizzes", status_code=303)

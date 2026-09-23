@@ -101,6 +101,22 @@
       </div>
       <script id="band-dist" type="application/json">{{ cp.distribution | tojson }}</script>
 
+      {% if data.class.progress and data.class.progress|length > 1 %}
+      <h4 class="mt-3">📈 تطوّر القسم عبر الزمن (ذاكرةٌ تراكميّة)</h4>
+      <p class="text-secondary" style="font-size:.85rem">معدّلُ كلّ تقويمٍ مصادَقٍ عليه بترتيب الزمن، والخطّ الفاتح متوسّطٌ جارٍ تراكميّ يُظهر مسار التطوّر.</p>
+      <canvas id="progressLine" height="200" aria-label="مبيان خطّيّ لتطوّر معدّل القسم عبر الزمن"></canvas>
+      <script id="progress-data" type="application/json">{{ data.class.progress | tojson }}</script>
+      <div class="table-responsive mt-2"><table class="table table-sm">
+        <thead><tr><th>التقويم</th><th>التاريخ</th><th>معدّل القسم</th><th>المتوسّط التراكميّ</th></tr></thead>
+        <tbody>
+        {% for p in data.class.progress %}
+          <tr><td style="font-size:.9rem">{{ p.label }}</td><td class="text-secondary">{{ p.date }}</td>
+              <td><b>{{ p.pct }}٪</b></td><td class="text-secondary">{{ p.cumulative }}٪</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+
       <h4 class="mt-3">توصيات الدعم البيداغوجيّ</h4>
       {% for r in cp.recommendations %}
         <div class="mb-2"><b style="color:#12489e">• {{ r.skill }}:</b> {{ r.advice }}</div>
@@ -198,6 +214,41 @@
         }
       },
       plugins: [depth3D]
+    });
+  }
+  (function ready(){ if (window.Chart) draw(); else setTimeout(ready, 50); })();
+})();
+</script>
+<script>
+// مبيان تطوّر معدّل القسم عبر الزمن (خطّ التقويمات + خطّ المتوسّط التراكميّ).
+(function(){
+  var el = document.getElementById("progress-data");
+  if (!el) return;
+  var rows = [];
+  try { rows = JSON.parse(el.textContent || "[]"); } catch (e) { return; }
+  if (!rows.length) return;
+  var labels = rows.map(function(r){ return r.label; });
+  var vals = rows.map(function(r){ return r.pct; });
+  var cum = rows.map(function(r){ return r.cumulative; });
+  function draw(){
+    var cv = document.getElementById("progressLine");
+    if (!window.Chart || !cv) return;
+    new Chart(cv, {
+      type: "line",
+      data: { labels: labels, datasets: [
+        { label: "معدّل التقويم", data: vals, borderColor: "#12489e",
+          backgroundColor: "rgba(18,72,158,.10)", tension: .3, fill: true, pointRadius: 4 },
+        { label: "المتوسّط التراكميّ", data: cum, borderColor: "#f9a825",
+          borderDash: [6, 4], tension: .3, fill: false, pointRadius: 3 }
+      ]},
+      options: {
+        scales: { y: { beginAtZero: true, max: 100,
+                       ticks: { callback: function(v){ return v + "٪"; } } } },
+        plugins: { legend: { position: "bottom",
+                             labels: { font: { family: "inherit", size: 13 }, padding: 12 } },
+                   tooltip: { callbacks: { label: function(c){
+                     return " " + c.dataset.label + ": " + c.parsed.y + "٪"; } } } }
+      }
     });
   }
   (function ready(){ if (window.Chart) draw(); else setTimeout(ready, 50); })();
